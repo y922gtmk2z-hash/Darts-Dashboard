@@ -113,6 +113,11 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
   - Teams in a match being played have their **whole row highlighted** with a red bar (admin also shows *LIVE · winning / losing / level*), so everyone can see those figures aren't final yet.
   - The TV table always shows **Form**: the last 5 finished league matches (oldest → newest). A match being played is added on the right as a pulsing pip showing how it stands (W / L / – for level).
   - Knockout seeding always uses finished results only.
+- **TV extras** (worked out from the results, nothing to enter):
+  - **At stake:** under each live match, the most dramatic thing riding on it, e.g. *"A win seals a semi-final place for Treble Makers"*, *"Arrows of Fury are out if they lose"*, *"The Bullseyes go top with a win"*. Knockout matches say what the winner gets.
+  - **Next up:** a free board's next match shows both teams' position, points and form, and how their last meeting went.
+  - **Race for the semi-finals:** a green ✓ by a team that's sure of a top-4 place whatever happens; teams that can no longer make it are faded. This is cautious: a tie on points is never assumed to go a team's way. The full table also says *"Win 2 of 3 to be sure"* when a team is close.
+  - **🔥 N** by a team on 3 or more wins in a row.
 - The league table's **Avg** column (TV and admin) is each team's mean over finished league matches with an average recorded.
 - Mistake? Press **Ctrl+Z** (or **↶ Undo**). The Fixtures tab still has the full list tools (add, paste, fixture check, balance boards).
 
@@ -195,10 +200,15 @@ Add these to the TV address:
 | URL | Shows |
 | --- | --- |
 | `index.html` | Automatic: the best layout for the current phase |
-| `index.html?view=table` | Only the full league table |
+| `index.html?view=table` | Only the full league table (with a *Semi-finals* column once anyone is through, out, or close) |
+| `index.html?view=chart` | Race for the top: every team's league position after each match, current top 4 highlighted |
+| `index.html?view=grid` | Head to head: every result between each pair of teams (row team's score first) |
+| `index.html?view=stats` | 3-dart averages (best average, best single match, on the up) and streaks & records |
 | `index.html?view=fixtures` | Up next and results |
 | `index.html?view=bracket` | The knockout bracket (during the league: "if it ended now") |
 | `index.html?rotate=15` | Cycles through views every 15 seconds, jumping back to the live view when a score changes |
+
+With `rotate`, the league cycles live → table → chart → head to head → stats → fixtures (the chart and stats join once there are results); the knockout cycles live → table → stats → fixtures; after the final it cycles champion → bracket → table → chart → stats.
 
 The TV is designed for 1920×1080. On other screen shapes it scales down and adds black bars, so nothing is ever cut off or scrolled. With more than 10 teams the league table takes the full height so it stays readable.
 

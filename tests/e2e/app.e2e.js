@@ -309,6 +309,23 @@ test('league table is live: points, W/L and +/- move with matches still being pl
   await ctx.close();
 });
 
+test('TV insights: stakes line, next-up preview and the chart / head-to-head / stats screens', { skip }, async () => {
+  const s = T.startMatch(leagueState(8, 20), T.nextUp(leagueState(8, 20))[1].id, 1);
+  const { ctx, tv, errors } = await openPair({ state: s });
+  await tv.waitForSelector('.live-card .lc-meta.stakes');
+  assert.match(await tv.textContent('.live-card .lc-meta.stakes'), /At stake/);
+  // The free board previews the next match with positions and form.
+  await tv.waitForSelector('.live-card.idle .nx-stat');
+  for (const [view, sel] of [['chart', 'svg.pos-chart path.ln'], ['grid', 'table.h2h td i'], ['stats', '.stats-grid .bars li']]) {
+    await tv.goto(`${base}/index.html?view=${view}`);
+    await tv.waitForSelector(sel);
+    if (view === 'chart') assert.equal(await tv.locator('svg.pos-chart path.ln').count(), 8);
+    if (view === 'grid') assert.equal(await tv.locator('table.h2h tbody tr').count(), 8);
+  }
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the final waits for the 3rd place play-off', { skip }, async () => {
   let s = loadDemoTeams(T.createTournament({ thirdPlace: true }), 4);
   s = simulateUntil(s, (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done'), seededRandom(5));

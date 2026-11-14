@@ -3,6 +3,7 @@
 import { createStore, createLocalStorageAdapter } from './store.js';
 import { APP_VERSION } from './version.js';
 import * as T from './logic/tournament.js';
+import * as I from './logic/insights.js';
 import { bracketView, winnerOf, knockoutSeeding } from './logic/bracket.js';
 import { legsToWinFor } from './logic/config.js';
 import { esc, stageName, slotName, playersText, teamBlock, slotBlock, fmtAvg, formatLine, legsFormat, applyTheme, registerServiceWorker } from './view.js';
@@ -11,7 +12,7 @@ const W = 1920;
 const H = 1080;
 const params = new URLSearchParams(location.search);
 const PREVIEW = params.has('preview');
-const PINNED = ['table', 'fixtures', 'bracket'].includes(params.get('view')) ? params.get('view') : null;
+const PINNED = ['table', 'fixtures', 'bracket', 'chart', 'grid', 'stats'].includes(params.get('view')) ? params.get('view') : null;
 const ROTATE = Math.max(0, Number(params.get('rotate')) || 0);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -36,9 +37,12 @@ fit();
 let rotateIndex = 0;
 function viewsFor(s) {
   if (!s || s.phase === 'setup') return ['auto'];
-  if (s.phase === 'league') return ['auto', 'table', 'fixtures'];
-  if (s.phase === 'knockout') return ['auto', 'table', 'fixtures'];
-  return ['auto', 'bracket', 'table'];
+  const hasChart = I.finishedLeague(s).length >= 2;
+  const hasStats = s.fixtures.some((f) => f.status === 'done');
+  const views = s.phase === 'league' ? ['auto', 'table', 'chart', 'grid', 'stats', 'fixtures']
+    : s.phase === 'knockout' ? ['auto', 'table', 'stats', 'fixtures']
+      : ['auto', 'bracket', 'table', 'chart', 'stats'];
+  return views.filter((v) => (v !== 'chart' || hasChart) && (v !== 'stats' || hasStats));
 }
 function currentView(s) {
   if (PINNED) return PINNED;
@@ -169,6 +173,9 @@ function body(s, view, ch) {
   switch (view) {
     case 'table': return `<section class="panel full">${panelTitle('League table')}${tableHTML(s, ch.rows, { full: true })}</section>`;
     case 'fixtures': return fixturesView(s, ch);
+    case 'chart': return `<section class="panel full">${panelTitle('Race for the top', `<span class="hint">League position after each match · top ${s.config.qualifiers} highlighted</span>`)}${positionChartHTML(s)}</section>`;
+    case 'grid': return `<section class="panel full">${panelTitle('Head to head', '<span class="hint">Read across: the row team’s score first</span>')}${gridHTML(s, ch.rows)}</section>`;
+    case 'stats': return statsView(s);
     case 'bracket': return `<section class="panel full">${panelTitle(s.phase === 'league' ? 'Knockout · if the league ended now' : 'Knockout')}${bracketHTML(s, ch.rows)}</section>`;
     default:
       if (s.phase === 'league') return leagueView(s, ch);
@@ -217,8 +224,7 @@ function liveCard(s, board, suggested, ch, waiting = false) {
     return `<article class="live-card idle">
       <div class="lc-head"><span class="board-name">${name}</span><span class="pill">${suggested ? 'Next up' : 'Free'}</span></div>
       ${suggested
-        ? `<div class="lc-next">${slotBlock(s, suggested, 'home', { cls: 'h end' })}<em>v</em>${slotBlock(s, suggested, 'away', { cls: 'a' })}</div>
-           <div class="lc-meta">${esc(stageName(suggested))} · ${waiting ? 'after the other board finishes' : 'get ready!'}</div>`
+        ? nextUpHTML(s, suggested, waiting)
         : `<div class="lc-next muted-big">${s.phase === 'complete' ? 'All done' : 'No match'}</div>`}
     </article>`;
   }
@@ -241,8 +247,32 @@ function liveCard(s, board, suggested, ch, waiting = false) {
       <div class="lc-score num"><span data-legs="${f.id}-home">${f.homeLegs}</span><b>–</b><span data-legs="${f.id}-away">${f.awayLegs}</span></div>
       ${side('away')}
     </div>
-    <div class="lc-meta">${esc(formatLine(s, f))}</div>
+    ${stakesHTML(s, f)}
   </article>`;
+}
+
+/** "What's at stake" line under a live match (falls back to the match format). */
+function stakesHTML(s, f) {
+  const line = I.matchStakes(s, f).lines[0];
+  if (!line) return `<div class="lc-meta">${esc(formatLine(s, f))}</div>`;
+  return `<div class="lc-meta stakes"><b>At stake</b>${esc(line)}</div>`;
+}
+
+/** Next-up card: both teams with table position, points and form, plus their last meeting. */
+function nextUpHTML(s, f, waiting) {
+  const p = f.homeId && f.awayId ? I.matchupPreview(s, f) : null;
+  const stat = (x) => (x && s.phase === 'league' && x.played
+    ? `<div class="nx-stat"><span>${I.ordinal(x.position)} · ${x.points} pts</span><span class="pips">${x.form.map((r) => `<i class="${r}">${r}</i>`).join('')}</span></div>`
+    : '');
+  let meta = `${esc(stageName(f))} · ${waiting ? 'after the other board finishes' : 'get ready!'}`;
+  if (p?.last) {
+    const w = winnerOf(p.last);
+    meta = `${esc(stageName(f))} · Last time: <strong>${esc(T.teamName(s, w))}</strong> won ${Math.max(p.last.homeLegs, p.last.awayLegs)}–${Math.min(p.last.homeLegs, p.last.awayLegs)}${waiting ? ' · after the other board finishes' : ''}`;
+  }
+  return `<div class="lc-next">
+      <div class="nx h">${slotBlock(s, f, 'home', { cls: 'end' })}${stat(p?.home)}</div><em>v</em><div class="nx a">${slotBlock(s, f, 'away')}${stat(p?.away)}</div>
+    </div>
+    <div class="lc-meta">${meta}</div>`;
 }
 
 // ---------- league
@@ -275,21 +305,38 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
   const rowH = Math.max(28, Math.min(full ? 72 : 60, Math.floor(avail / Math.max(rows.length, 1))));
   const now = Date.now();
   const anyLive = rows.some((r) => r.live);
+  const league = s.phase === 'league';
+  const quals = league ? I.qualificationStatus(s) : new Map();
+  const { streaks } = I.records(s);
+  // The race column only appears once someone is through, out, or close to sure.
+  const race = full && league && [...quals.values()].some((x) => x.status !== 'alive' || (x.needs && x.needs <= 3));
   return `<table class="tv-table with-avg ${full ? 'full' : 'compact'} ${anyLive ? 'any-live' : ''}" style="--row-h:${rowH}px">
-    <thead><tr><th class="pos">#</th><th class="team">Team</th><th>P</th><th>W</th><th>L</th><th>+/-</th><th class="avg-h">Avg</th><th class="pts">Pts</th><th class="form-h">Form</th></tr></thead>
+    <thead><tr><th class="pos">#</th><th class="team">Team</th><th>P</th><th>W</th><th>L</th><th>+/-</th><th class="avg-h">Avg</th><th class="pts">Pts</th><th class="form-h">Form</th>${race ? '<th class="race-h">Semi-finals</th>' : ''}</tr></thead>
     <tbody>${rows.map((r, i) => {
       const mv = movement.get(r.teamId);
       const arrow = mv && mv.until > now ? `<span class="mv ${mv.dir}">${mv.dir === 'up' ? '▲' : '▼'}</span>` : '';
-      return `<tr data-team-row="${r.teamId}" class="${i < q ? 'q' : ''} ${i === q - 1 && rows.length > q ? 'cut' : ''} ${r.live ? 'playing' : ''}">
+      const qs = quals.get(r.teamId);
+      const run = streaks.get(r.teamId)?.current ?? 0;
+      const marks = `${qs?.status === 'in' ? '<span class="qmark" title="Sure of a semi-final place">✓</span>' : ''}${run >= 3 ? `<span class="hot" title="${run} wins in a row">🔥${run}</span>` : ''}`;
+      return `<tr data-team-row="${r.teamId}" class="${i < q ? 'q' : ''} ${i === q - 1 && rows.length > q ? 'cut' : ''} ${r.live ? 'playing' : ''} ${qs?.status === 'out' ? 'out' : ''}">
         <td class="pos num">${r.position}${r.tiedWithPrev ? '<span class="tie">=</span>' : ''}</td>
-        <td class="team">${teamBlock(s, r.teamId, { inline: rows.length > 10, cls: 'nm' })}${arrow}</td>
+        <td class="team"><span class="tcell">${teamBlock(s, r.teamId, { inline: rows.length > 10, cls: 'nm' })}${marks}${arrow}</span></td>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.lost}</td>
         <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td><td class="num avg">${fmtAvg(r.avg) || '–'}</td>
         <td class="pts num">${r.points}</td>
         <td class="form">${formHTML(r)}</td>
+        ${race ? `<td class="race ${qs?.status ?? ''}">${raceText(qs)}</td>` : ''}
       </tr>`;
     }).join('')}</tbody>
   </table>`;
+}
+
+function raceText(qs) {
+  if (!qs) return '';
+  if (qs.status === 'in') return '✓ Through';
+  if (qs.status === 'out') return 'Can’t make it';
+  if (qs.needs && qs.needs <= 3) return qs.needs === qs.remaining ? `Win all ${qs.remaining} to be sure` : `Win ${qs.needs} of ${qs.remaining} to be sure`;
+  return 'Still in it';
 }
 
 /**
@@ -389,6 +436,107 @@ function bracketHTML(s, rows) {
       <div class="champ-name">${champ ? esc(T.teamName(s, champ)) : '?'}</div>
     </div>
   </div>`;
+}
+
+// ---------- position chart
+
+// Four categorical hues for the current top 4 (checked for colour-blind
+// separation against the panel; every line also carries a direct label).
+const CHART_COLORS = ['#3987e5', '#d95926', '#199e70', '#e66767'];
+
+function positionChartHTML(s) {
+  const { fixtures, steps } = I.positionHistory(s);
+  if (steps.length < 2) return '<p class="empty">The chart appears after a couple of results.</p>';
+  const n = s.teams.length;
+  const q = s.config.qualifiers;
+  const VW = 1760;
+  const VH = 800;
+  const L = 70;
+  const R = 380;
+  const TOP = 24;
+  const B = 64;
+  const pw = VW - L - R;
+  const ph = VH - TOP - B;
+  const x = (i) => L + (steps.length === 1 ? pw : (i / (steps.length - 1)) * pw);
+  const y = (p) => TOP + (n === 1 ? 0 : ((p - 1) / (n - 1)) * ph);
+  const last = steps[steps.length - 1];
+  const order = [...last].sort((a, b) => a[1] - b[1]).map(([id]) => id);
+  const color = new Map(order.slice(0, q).map((id, i) => [id, CHART_COLORS[i]]));
+  const path = (id) => steps.map((m, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(m.get(id)).toFixed(1)}`).join('');
+  const grid = Array.from({ length: n }, (_, i) => `<line class="grid" x1="${L}" x2="${L + pw}" y1="${y(i + 1)}" y2="${y(i + 1)}"/>
+    <text class="axis" x="${L - 18}" y="${y(i + 1)}" text-anchor="end" dominant-baseline="central">${i + 1}</text>`).join('');
+  const cutY = n > q ? (y(q) + y(q + 1)) / 2 : null;
+  const every = Math.max(1, Math.ceil(steps.length / 12));
+  const ticks = steps.map((_, i) => i).filter((i) => (i + 1) % every === 0 || i === 0)
+    .map((i) => `<text class="axis" x="${x(i)}" y="${TOP + ph + 36}" text-anchor="middle">${i + 1}</text>`).join('');
+  const grey = order.slice(q).map((id) => `<path class="ln dim" d="${path(id)}"/>`).join('');
+  const lit = order.slice(0, q).reverse().map((id) => `<path class="ln" d="${path(id)}" stroke="${color.get(id)}"/>
+    <circle cx="${x(steps.length - 1)}" cy="${y(last.get(id))}" r="8" fill="${color.get(id)}" class="end"/>`).join('');
+  const labels = order.map((id) => {
+    const p = last.get(id);
+    const c = color.get(id);
+    return `<text class="lbl ${c ? '' : 'dim'}" x="${L + pw + 24}" y="${y(p)}" dominant-baseline="central">${p}. ${esc(T.teamName(s, id))}</text>`;
+  }).join('');
+  return `<svg class="pos-chart" viewBox="0 0 ${VW} ${VH}" role="img" aria-label="League position of each team after each of ${fixtures.length} matches">
+    ${grid}
+    ${cutY ? `<line class="cut" x1="${L}" x2="${L + pw}" y1="${cutY}" y2="${cutY}"/>` : ''}
+    ${ticks}<text class="axis title" x="${L + pw / 2}" y="${VH - 4}" text-anchor="middle">League matches played</text>
+    ${grey}${lit}${labels}
+  </svg>`;
+}
+
+// ---------- head-to-head grid
+
+function gridHTML(s, rows) {
+  const h2h = I.headToHead(s);
+  const ids = rows.map((r) => r.teamId);
+  const n = ids.length;
+  const rowH = Math.min(90, Math.floor((750 - (n + 2) * 4) / (n + 0.7))); // rows + header + spacing fit the panel
+  const cell = (a, b) => {
+    if (a === b) return '<td class="self"></td>';
+    const list = h2h.get(`${a}|${b}`) ?? [];
+    const chips = list.map((f) => {
+      const mine = f.homeId === a ? f.homeLegs : f.awayLegs;
+      const theirs = f.homeId === a ? f.awayLegs : f.homeLegs;
+      if (f.status === 'scheduled') return '<i class="todo">·</i>';
+      const cls = f.status === 'live' ? 'live' : mine > theirs ? 'W' : 'L';
+      return `<i class="${cls}">${mine}–${theirs}</i>`;
+    }).join('');
+    return `<td>${chips}</td>`;
+  };
+  return `<table class="h2h" style="--cell-h:${rowH}px">
+    <thead><tr><th class="corner"></th>${ids.map((_, i) => `<th>${i + 1}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map((r) => `<tr><th class="rowh"><span class="p">${r.position}</span>${teamBlock(s, r.teamId, { inline: true, cls: 'nm' })}</th>${ids.map((b) => cell(r.teamId, b)).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+
+// ---------- stats: averages, streaks and records
+
+function statsView(s) {
+  const a = I.averagesBoard(s);
+  const r = I.records(s);
+  const name = (id) => esc(T.teamName(s, id));
+  const vsOf = (f, id) => name(f.homeId === id ? f.awayId : f.homeId);
+  const max = Math.max(1, ...a.season.map((x) => x.avg));
+  const avgPanel = !a.count ? '<p class="empty">No 3-dart averages recorded yet.</p>' : `
+    <h3>Best average</h3>
+    <ol class="bars">${a.season.map((x, i) => `<li><span class="rk">${i + 1}</span><span class="nm">${name(x.teamId)}</span>
+      <span class="bar"><i style="width:${((x.avg / max) * 100).toFixed(1)}%"></i></span><b class="num">${fmtAvg(x.avg)}</b><em>${x.count} match${x.count === 1 ? '' : 'es'}</em></li>`).join('')}</ol>
+    <h3>Best single match</h3>
+    <ol class="facts">${a.bestMatch.slice(0, 3).map((x) => `<li><b class="num">${fmtAvg(x.avg)}</b><span>${name(x.teamId)} <em>v ${vsOf(x.fixture, x.teamId)} · ${esc(stageName(x.fixture, { short: true }))}</em></span></li>`).join('')}</ol>
+    ${a.improved.length ? `<h3>On the up</h3><ol class="facts">${a.improved.map((x) => `<li><b class="num up">+${x.change.toFixed(1)}</b><span>${name(x.teamId)} <em>last 3: ${fmtAvg(x.recent)} · before: ${fmtAvg(x.earlier)}</em></span></li>`).join('')}</ol>` : ''}`;
+  const up = r.upset;
+  const recPanel = `
+    <ol class="facts big">
+      <li><b class="num">${r.longest.length || '–'}</b><span>Longest winning run<em>${r.longest.teamIds.map(name).join(', ') || 'No results yet'}</em></span></li>
+      <li><b class="num">${r.hot[0]?.length ?? '–'}</b><span>On fire now 🔥<em>${r.hot.length ? r.hot.map((h) => `${name(h.teamId)} (${h.length})`).join(', ') : 'Nobody on 3+ wins in a row'}</em></span></li>
+      <li><b class="num">${r.whitewashes[0]?.count ?? '–'}</b><span>Most whitewashes<em>${r.whitewashes.length ? r.whitewashes.filter((w) => w.count === r.whitewashes[0].count).map((w) => name(w.teamId)).join(', ') + ' · wins without dropping a leg' : 'Wins without dropping a leg'}</em></span></li>
+      <li><b class="num">${up ? `↑${up.gap}` : '–'}</b><span>Biggest upset${up ? ` · ${up.gap} place${up.gap === 1 ? '' : 's'} apart` : ''}<em>${up ? `${name(up.winnerId)} (${I.ordinal(up.winnerPos)}) beat ${name(up.loserId)} (${I.ordinal(up.loserPos)}) ${Math.max(up.fixture.homeLegs, up.fixture.awayLegs)}–${Math.min(up.fixture.homeLegs, up.fixture.awayLegs)}` : 'None yet'}</em></span></li>
+    </ol>`;
+  return `<section class="stats-grid">
+    <div class="panel">${panelTitle('3-dart averages')}${avgPanel}</div>
+    <div class="panel">${panelTitle('Streaks & records')}${recPanel}</div>
+  </section>`;
 }
 
 // ---------- champion
