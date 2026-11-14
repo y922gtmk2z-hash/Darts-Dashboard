@@ -175,6 +175,56 @@ test('3-dart averages: typed on the live board, confirmed when finishing, shown 
   await ctx.close();
 });
 
+test('a TV left open from an older release refreshes itself (once) when the admin page is newer', { skip }, async () => {
+  // No service worker here so route() sees every request.
+  const ctx = await browser.newContext({ serviceWorkers: 'block' });
+  const tv = await ctx.newPage();
+  let tvLoads = 0;
+  tv.on('load', () => { tvLoads++; });
+  await tv.goto(`${base}/index.html?preview=1`);
+  // The admin page gets a "newer release" (the server still serves the old one to the TV).
+  const admin = await ctx.newPage();
+  await admin.route('**/js/version.js', (route) => route.fulfill({ contentType: 'text/javascript', body: 'export const APP_VERSION = 999;' }));
+  await admin.goto(`${base}/admin.html`);
+  await tv.waitForEvent('load', { timeout: 8000 });
+  // Still "old" after reloading: the guard must stop it reloading again and again.
+  await admin.waitForTimeout(5000);
+  assert.equal(tvLoads, 2, 'reloaded exactly once');
+  // A TV running a *newer* release makes the admin page ask to be reloaded.
+  const admin2 = await ctx.newPage();
+  await tv.route('**/js/version.js', (route) => route.fulfill({ contentType: 'text/javascript', body: 'export const APP_VERSION = 1000;' }));
+  await admin2.goto(`${base}/admin.html`);
+  await tv.reload();
+  await admin2.waitForSelector('text=This admin page is out of date', { timeout: 8000 });
+  await ctx.close();
+});
+
+test('fixtures screen: each pair once on each board; set boards, per-board queue, balance', { skip }, async () => {
+  const { ctx, admin, tv, errors } = await openPair({ state: leagueState(8) });
+  await admin.click('.tabs [data-tab="fixtures"]');
+  assert.match(await admin.textContent('.fixture-tools'), /Every pair plays once on Board 1 and once on Board 2/);
+  // Board 1 view lists only Board 1 matches, numbered in that board's order.
+  await admin.click('[data-action="fixture-board-view"][data-board-view="1"]');
+  const boards = await admin.$$eval('table.fixtures tbody select.board-select', (els) => els.map((e) => e.value));
+  assert.ok(boards.length === 28 && boards.every((v) => v === '1'));
+  assert.equal(await admin.textContent('table.fixtures tbody tr:nth-child(1) td:first-child'), '1');
+  // Move a match to Board 2: the check notices; balancing fixes it.
+  const id = await admin.$eval('table.fixtures tbody tr:nth-child(2) select.board-select', (e) => e.dataset.id);
+  await admin.selectOption(`#fb-${id}`, '2');
+  await admin.waitForFunction(() => /Not once on each board/.test(document.querySelector('.fixture-tools').textContent));
+  await admin.click('text=Balance boards automatically');
+  await admin.click('dialog button:has-text("Balance boards")');
+  await admin.waitForFunction(() => /Every pair plays once on Board 1 and once on Board 2/.test(document.querySelector('.fixture-tools').textContent));
+  // Live scoring follows the plan; the TV labels up-next matches with their board.
+  await admin.click('.tabs [data-tab="live"]');
+  await admin.click('text=Start on Board 1');
+  const started = await admin.evaluate((k) => JSON.parse(localStorage.getItem(k)).fixtures.find((f) => f.status === 'live'), KEY);
+  assert.equal(started.plannedBoard, 1);
+  await tv.waitForSelector('.tagc.b2');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the final waits for the 3rd place play-off', { skip }, async () => {
   let s = loadDemoTeams(T.createTournament({ thirdPlace: true }), 4);
   s = simulateUntil(s, (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done'), seededRandom(5));

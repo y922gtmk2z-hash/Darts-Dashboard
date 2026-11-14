@@ -93,6 +93,7 @@ export function applyTheme(state) {
 
 export function registerServiceWorker() {
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    // updateViaCache 'none': always check sw.js itself with the server, so a deploy is noticed.
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});
   }
 }

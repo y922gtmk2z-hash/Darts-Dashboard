@@ -68,9 +68,16 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 3. Open the TV window and put it on the TV. It shows the logo and the registered teams. Check the admin page says **📺 TV connected**.
 4. Click **Generate fixtures & start league**, or **…start with an empty fixture list** to set every match yourself. After this, teams can be renamed but not added or removed.
 
+**Boards** (Fixtures tab)
+- Every match is planned for **Board 1** or **Board 2**. Generated fixtures give every pair one match on each board, so every team plays half its games on each. The two matches running side by side never involve the same team.
+- Use the **Board 1 / Board 2 / Both boards** switch to see one board's queue in its own running order. There, **↑ ↓** and **Play next** move matches within that board only.
+- Change any unplayed match's board with the dropdown in its **Board** column (or in **Edit**). *Either* lets whichever board is free take it.
+- **Fixture check** shows each team's Board 1 / Board 2 split and lists any pair that isn't once on each board. **Balance boards automatically** re-plans the boards of all unplayed matches without changing their order.
+- On **Live scoring**, each board's *Next up* comes from its own queue. If one board runs out while the other still has matches, it borrows the next one. You can always start a different match from the *Or start another match* list; a match started on the other board is recorded as played there.
+
 **Setting the fixtures yourself** (Fixtures tab, any time during the league)
-- **Add a match:** pick the home and away teams, then click **Add**. It goes to the end of the queue.
-- **Paste a fixture list:** one match per line, in play order, as `Team A v Team B` (`vs` and `-` also work). Team names must match the Teams tab. Any line that can't be read stays in the box with the reason, so you can fix it.
+- **Add a match:** pick the home and away teams (and optionally the board), then click **Add**. It goes to the end of the queue. *Board: auto* puts a pair's second meeting on the other board.
+- **Paste a fixture list:** one match per line, in play order, as `Team A v Team B` (`vs` and `-` also work), optionally ending with the board: `Team A v Team B (Board 2)`. Team names must match the Teams tab. Any line that can't be read stays in the box with the reason, so you can fix it.
 - On any match that hasn't started:
   - **Edit** changes the teams or its position in the queue (1 = next).
   - **⇄** swaps home and away.
@@ -129,6 +136,8 @@ Browser storage can be cleared, so take backups.
 | Browser closed or laptop restarted | Just reopen both pages. Everything reloads from storage |
 | Storage wiped or a new laptop | **Backup & recovery → Import JSON backup** and choose your latest file |
 | TV not updating / admin says **TV not connected** | Both windows must be in the same browser, on exactly the same address (the TV's waiting screen shows it), and not private. Reopen it with **📺 Open TV window**. Refreshing the TV is always safe |
+| Admin says **📺 TV needs a refresh** | The TV window is running an older version of the app (it was open before an update). Click inside it and press **F5** (Mac: **Cmd+R**) once. Your tournament isn't affected |
+| Admin shows **This admin page is out of date** | Click **Reload now**. Everything is saved and comes straight back |
 | TV shows **Not connected to the admin window** (small, bottom right) | The admin window is closed or in another browser. Reopen admin.html in the same browser |
 | Import says **This backup has problems** | The file is damaged or was edited. Nothing was changed. Import an earlier backup file |
 | "Admin is open in another window" | Close the extra admin tab and only score from one |
@@ -213,4 +222,7 @@ tests/e2e/               browser tests (admin + TV together), need Playwright
 - The unit tests include random sequences of organiser actions that must never break the tournament's rules: one match per board, no team on two boards, valid scores, and a valid state at every step.
 - **Data model:** a single tournament object `{config, phase, teams[], fixtures[], seeds}`. Standings and the bracket are always derived and never stored.
 - **Adding remote scoring later:** write another adapter with the same shape as `createLocalStorageAdapter` in `js/store.js` (`load`, `save`, `listen`, `broadcast`…), for example backed by Firebase, and pass it to `createStore`. Nothing else needs to change.
-- After changing cached files, bump `VERSION` in `sw.js` so browsers pick up the new version promptly.
+- **Releasing a change:** bump `APP_VERSION` in `js/version.js` *and* `VERSION` in `sw.js` (a test fails if they differ).
+  - When online, the service worker fetches the latest files first. It falls back to its saved copy only when offline or the network is slow, so one reload picks up a deploy.
+  - A TV window left open from an older release refreshes itself as soon as a newer admin page is open. It tries once, so a stubborn cache can't cause a reload loop.
+  - If the TV is the newer one, the admin page shows a "This admin page is out of date — Reload now" banner.

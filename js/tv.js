@@ -1,6 +1,7 @@
 // TV dashboard. Read-only: follows the admin window through the store.
 // Designed on a fixed 1920×1080 stage that is scaled to fit (letterboxed).
 import { createStore, createLocalStorageAdapter } from './store.js';
+import { APP_VERSION } from './version.js';
 import * as T from './logic/tournament.js';
 import { bracketView, winnerOf, knockoutSeeding } from './logic/bracket.js';
 import { legsToWinFor } from './logic/config.js';
@@ -300,7 +301,8 @@ function upNextHTML(s, n) {
   const boardOf = new Map([[next[1]?.id, 1], [next[2]?.id, 2]]);
   return `<ol class="list">${q.map((f) => {
     const b = boardOf.get(f.id);
-    return `<li><span class="tagc">${b ? esc(s.config.boardNames[b - 1]) : esc(stageName(f, { short: true }))}</span>
+    const board = b ?? f.plannedBoard;
+    return `<li><span class="tagc ${board ? `b${board}` : ''}">${board ? esc(s.config.boardNames[board - 1]) : esc(stageName(f, { short: true }))}</span>
       <span class="teams">${slotBlock(s, f, 'home')}<em>v</em>${slotBlock(s, f, 'away')}</span></li>`;
   }).join('')}</ol>`;
 }
@@ -533,6 +535,7 @@ let adminSeenAt = 0;
 store.onMessage((msg) => {
   if (msg.type === 'admin-beat') {
     adminSeenAt = Date.now();
+    if ((Number(msg.version) || 0) > APP_VERSION) refreshForUpdate(Number(msg.version));
     updateLink();
   }
 });
@@ -543,7 +546,22 @@ function updateLink() {
   const quiet = Date.now() - adminSeenAt > 10000 && performance.now() > 10000;
   badge.hidden = !quiet;
 }
-const beat = () => store.post({ type: 'tv-beat', at: Date.now(), preview: PREVIEW });
+const beat = () => store.post({ type: 'tv-beat', at: Date.now(), preview: PREVIEW, version: APP_VERSION });
+
+/**
+ * The admin page is running a newer release than this TV window (which may
+ * have been open since before the deploy): reload to pick it up. Guarded so a
+ * stubborn cache can't cause a reload loop.
+ */
+function refreshForUpdate(version) {
+  const KEY = 'dartsDashboard.tvUpdateTried';
+  try {
+    const last = JSON.parse(sessionStorage.getItem(KEY) ?? 'null');
+    if (last && last.version === version && Date.now() - last.at < 120000) return;
+    sessionStorage.setItem(KEY, JSON.stringify({ version, at: Date.now() }));
+  } catch { /* no sessionStorage: still try once per page load */ }
+  location.reload();
+}
 beat();
 setInterval(() => { beat(); updateLink(); }, 2000);
 
