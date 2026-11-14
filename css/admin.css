@@ -381,3 +381,4 @@ main .who-players { font-size: 0.8em; }
 .add-fixture { grid-template-columns: 1fr auto 1fr auto auto; }
 .add-fixture #af-board { width: auto; }
 @media (max-width: 1000px) { .add-fixture { grid-template-columns: 1fr 1fr; } }
+.avg-note { display: block; font-size: 0.7rem; color: var(--faint); margin-top: 0.1rem; }
