@@ -195,7 +195,7 @@ These can't be tested automatically, so do them once on the actual equipment:
 
 ## 6. TV options
 
-**Rotating screens:** in admin **Settings → TV screens**, choose *Rotate … every 20 s* (or another interval). The TV starts cycling straight away, no address changes needed, and the setting is saved with the tournament. A scored leg or finished match always brings the TV back to the live screen for a full turn.
+**Rotating screens:** in admin **Settings → TV screens**, choose *Rotate … every 20 s* (or another interval). The TV starts cycling straight away, no address changes needed, and the setting is saved with the tournament. A scored leg or finished match always brings the TV back to the live screen for a full turn. The line under the setting says what the TV is doing right now (e.g. *✓ TV is rotating every 20 s · now showing the position chart*) or why it isn't rotating: before the league starts there's only the teams screen, so rotation begins once the league is under way. The admin **Preview TV** pane rotates too.
 
 You can also add these to the TV address (they override the setting):
 

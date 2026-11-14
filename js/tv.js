@@ -51,9 +51,9 @@ function currentView(s) {
   const v = viewsFor(s);
   return v[rotateIndex % v.length];
 }
-/** Seconds per screen, 0 = no rotation. The admin preview pane never rotates. */
+/** Seconds per screen, 0 = no rotation. The admin preview pane follows the setting too. */
 function rotateSeconds(s) {
-  if (PREVIEW || PINNED) return 0;
+  if (PINNED) return 0;
   return URL_ROTATE ?? s?.config?.tvRotate ?? 0;
 }
 let rotateTimer = 0;
@@ -718,7 +718,14 @@ function updateLink() {
   const quiet = Date.now() - adminSeenAt > 10000 && performance.now() > 10000;
   badge.hidden = !quiet;
 }
-const beat = () => store.post({ type: 'tv-beat', at: Date.now(), preview: PREVIEW, version: APP_VERSION });
+// Also tells the admin page what's on screen, so Settings can say whether the TV is rotating.
+const beat = () => {
+  const s = store.get();
+  store.post({
+    type: 'tv-beat', at: Date.now(), preview: PREVIEW, version: APP_VERSION,
+    view: currentView(s), rotate: rotateSeconds(s), screens: viewsFor(s).length, pinned: PINNED, urlRotate: URL_ROTATE,
+  });
+};
 
 /**
  * The admin page is running a newer release than this TV window (which may

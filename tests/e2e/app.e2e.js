@@ -335,9 +335,19 @@ test('TV rotation is switched on from admin Settings (no ?rotate needed) and a s
   await admin.click('.tabs [data-tab="settings"]');
   await admin.selectOption('#cfg-rotate', '10');
   await tv.waitForFunction(() => !/view-auto/.test(document.querySelector('main')?.className ?? ''), null, { timeout: 13000 });
+  await admin.waitForFunction(() => /TV is rotating every 10 s/.test(document.getElementById('rotate-status')?.textContent ?? ''));
   // A leg scored on the admin page sends the TV straight back to the live screen.
   await admin.keyboard.press('q');
   await tv.waitForFunction(() => /view-auto/.test(document.querySelector('main')?.className ?? ''));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('before the league starts, Settings explains why the TV is not rotating yet', { skip }, async () => {
+  const s = T.updateConfig(loadDemoTeams(T.createTournament(), 8), { tvRotate: 10 });
+  const { ctx, admin, errors } = await openPair({ state: s });
+  await admin.click('.tabs [data-tab="settings"]');
+  await admin.waitForFunction(() => /Rotation starts when the league starts/.test(document.getElementById('rotate-status')?.textContent ?? ''), null, { timeout: 8000 });
   assert.deepEqual(errors, []);
   await ctx.close();
 });
