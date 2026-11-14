@@ -75,7 +75,7 @@ function trackChanges(s) {
   }
   prevLegs = legs;
 
-  const rows = T.standings(s);
+  const rows = T.liveStandings(s);
   const now = Date.now();
   if (prevPositions) {
     for (const r of rows) {
@@ -105,7 +105,7 @@ function render({ transition = false, changes = null } = {}) {
   }
   applyTheme(s);
   document.title = `${s.config.title} · Live`;
-  const ch = changes ?? { bumps: new Set(), rows: T.standings(s), fresh: [], phaseChanged: false };
+  const ch = changes ?? { bumps: new Set(), rows: T.liveStandings(s), fresh: [], phaseChanged: false };
   const view = currentView(s);
 
   // FLIP: remember where table rows were before re-rendering.
@@ -271,7 +271,6 @@ function leagueView(s, ch) {
 
 function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
   const q = s.config.qualifiers;
-  const live = new Set(T.liveFixtures(s).flatMap((f) => [f.homeId, f.awayId]));
   const avail = availOverride ?? (full ? 790 : 460);
   const rowH = Math.max(28, Math.min(full ? 72 : 60, Math.floor(avail / Math.max(rows.length, 1))));
   const now = Date.now();
@@ -282,9 +281,9 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
     <tbody>${rows.map((r, i) => {
       const mv = movement.get(r.teamId);
       const arrow = mv && mv.until > now ? `<span class="mv ${mv.dir}">${mv.dir === 'up' ? '▲' : '▼'}</span>` : '';
-      return `<tr data-team-row="${r.teamId}" class="${i < q ? 'q' : ''} ${i === q - 1 && rows.length > q ? 'cut' : ''}">
+      return `<tr data-team-row="${r.teamId}" class="${i < q ? 'q' : ''} ${i === q - 1 && rows.length > q ? 'cut' : ''} ${r.live ? 'playing' : ''}">
         <td class="pos num">${r.position}</td>
-        <td class="team">${teamBlock(s, r.teamId, { inline: rows.length > 10, cls: 'nm' })}${live.has(r.teamId) ? '<span class="live-dot"></span>' : ''}${arrow}</td>
+        <td class="team">${teamBlock(s, r.teamId, { inline: rows.length > 10, cls: 'nm' })}${r.live ? '<span class="live-dot"></span>' : ''}${arrow}</td>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.lost}</td>
         <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="num avg">${fmtAvg(r.avg) || '–'}</td>` : ''}
         <td class="pts num">${r.points}</td>

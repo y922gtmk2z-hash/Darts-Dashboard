@@ -20,17 +20,25 @@ function emptyRow(team) {
     h2hLegDiff: 0,
     position: 0,
     tiedWithPrev: false, // true = only separated from the row above by name
+    live: false, // includes a match still being played (provisional)
+    liveResult: null, // 'W' | 'L' | 'level' — how that match stands right now
+    liveLegDiff: 0, // the part of legDiff that comes from that match
   };
 }
 
 const primary = (a, b) => b.points - a.points || b.legDiff - a.legDiff || b.legsFor - a.legsFor;
 
 /**
+ * includeLive: a live "as it stands" table. Legs already won in league
+ * matches still being played count straight away, and whoever is ahead in
+ * such a match is given a provisional win (played, W/L, points); a level
+ * match adds legs only. Rows involved are flagged `live`.
+ *
  * Order: points -> leg difference -> legs won -> head-to-head -> name.
  * Head-to-head is a mini-league among the teams still level (points, then
  * leg difference in those matches).
  */
-export function computeStandings(teams, fixtures, config) {
+export function computeStandings(teams, fixtures, config, { includeLive = false } = {}) {
   const rows = new Map(teams.map((t) => [t.id, emptyRow(t)]));
   const win = config?.points?.win ?? 3;
   const loss = config?.points?.loss ?? 0;
@@ -58,6 +66,33 @@ export function computeStandings(teams, fixtures, config) {
       if (typeof avg === 'number') {
         row.avgSum += avg;
         row.avgCount++;
+      }
+    }
+  }
+
+  if (includeLive) {
+    for (const f of fixtures) {
+      if (f.stage !== 'league' || f.status !== 'live') continue;
+      const h = rows.get(f.homeId);
+      const a = rows.get(f.awayId);
+      if (!h || !a) continue;
+      // "As it stands": whoever is ahead gets a provisional win; level = legs only.
+      const leader = f.homeLegs > f.awayLegs ? h : f.awayLegs > f.homeLegs ? a : null;
+      for (const [row, legsFor, legsAgainst] of [[h, f.homeLegs, f.awayLegs], [a, f.awayLegs, f.homeLegs]]) {
+        row.legsFor += legsFor;
+        row.legsAgainst += legsAgainst;
+        row.live = true;
+        row.liveLegDiff += legsFor - legsAgainst;
+        if (leader) {
+          const won = row === leader;
+          row.played++;
+          if (won) row.won++;
+          else row.lost++;
+          row.points += won ? win : loss;
+          row.liveResult = won ? 'W' : 'L';
+        } else {
+          row.liveResult = 'level';
+        }
       }
     }
   }

@@ -447,3 +447,9 @@ main .who-players { font-size: 0.8em; }
   .md-head, .md-row { grid-template-columns: 1.6rem minmax(0, 1fr); }
   .md-row > :nth-child(3) { grid-column: 2; }
 }
+
+/* league table: teams in a match being played (figures are provisional) */
+.standings tr.playing td { background: color-mix(in srgb, var(--red) 12%, transparent); }
+.standings tr.playing td:first-child { box-shadow: inset 4px 0 var(--red); }
+.live-badge { display: inline-block; margin-left: 0.4rem; font-size: 0.66rem; font-weight: 800; letter-spacing: 0.05em; padding: 0.05rem 0.4rem; border-radius: 999px; background: var(--red); color: #fff; vertical-align: middle; white-space: nowrap; }
+.live-badge.w { background: var(--green); color: #04220f; }
