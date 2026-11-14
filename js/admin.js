@@ -5,9 +5,10 @@ import { knockoutSeeding, bracketView, winnerOf } from './logic/bracket.js';
 import { legsToWinFor, bestOfFor, MIN_TEAMS, MAX_TEAMS } from './logic/config.js';
 import { loadDemoTeams, simulateStep, simulateMatch, simulateUntil } from './logic/simulate.js';
 import {
-  esc, stageName, slotName, playersText, formatLine, phaseLabel, timeAgo, applyTheme, registerServiceWorker,
+  esc, stageName, slotName, playersText, teamText, teamBlock, slotBlock, fmtAvg, formatLine, legsFormat, phaseLabel, timeAgo, applyTheme, registerServiceWorker,
 } from './view.js';
 
+const LONG_NAME = 24; // longer team names get shortened with … on parts of the TV
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -25,7 +26,9 @@ function act(label, fn) {
   try {
     const before = S();
     const next = fn(before);
-    if (next && next !== before) store.set(next, { label });
+    // Actions that change nothing (e.g. −1 at 0 legs) are not saved, so Undo
+    // always undoes something visible.
+    if (next && next !== before && JSON.stringify(next) !== JSON.stringify(before)) store.set(next, { label });
     return true;
   } catch (e) {
     toast(e.message, 'error');
@@ -50,10 +53,11 @@ const prefs = (() => {
 
 let tab = prefs.get('tab', null) ?? (S().phase === 'setup' ? 'teams' : 'live');
 let fixtureFilter = prefs.get('fixtureFilter', 'upcoming');
+let fixtureTeam = prefs.get('fixtureTeam', '');
 
 // ---------------------------------------------------------------- toasts & dialogs
 
-function toast(message, kind = 'info', { action, timeout = 5000 } = {}) {
+function toast(message, kind = 'info', { action, timeout = kind === 'error' ? 7000 : 3500 } = {}) {
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
   el.innerHTML = `<span>${esc(message)}</span>`;
@@ -149,6 +153,16 @@ async function importBackup(file) {
     toast('That file does not look like a tournament backup.', 'error');
     return;
   }
+  const problems = T.validateState(next);
+  if (problems.length) {
+    await ask({
+      title: 'This backup has problems',
+      body: `<p>It was <strong>not</strong> imported, so nothing has changed. Try an earlier backup file.</p>
+        <ul class="problems">${problems.slice(0, 8).map((p) => `<li>${esc(p)}</li>`).join('')}${problems.length > 8 ? `<li>…and ${problems.length - 8} more</li>` : ''}</ul>`,
+      buttons: [{ label: 'OK', value: 'ok', kind: 'primary', autofocus: true }],
+    });
+    return;
+  }
   const ok = await confirmAction(
     'Import backup?',
     `This replaces the current tournament with “${esc(next.config.title)}” (${next.teams.length} teams, phase: ${phaseLabel(next.phase)}). The current state stays in the recovery history.`,
@@ -161,12 +175,21 @@ async function importBackup(file) {
 
 // ---------------------------------------------------------------- scoring
 
-async function changeLegs(id, side, delta) {
+async function changeLegs(id, side, delta, { announce = false } = {}) {
   const before = S();
   const wasDecided = T.matchIsDecided(before, id);
   if (!act(delta > 0 ? 'Leg won' : 'Leg removed', (s) => T.adjustLegs(s, id, side, delta))) return;
-  flash(id, side);
-  if (!wasDecided && T.matchIsDecided(S(), id)) promptFinish(id);
+  const after = T.fixtureById(S(), id);
+  const prev = T.fixtureById(before, id);
+  const changed = after.homeLegs !== prev.homeLegs || after.awayLegs !== prev.awayLegs;
+  if (changed) {
+    flash(id, side);
+    if (announce) {
+      // Scored from the keyboard while another tab is open: confirm what happened.
+      toast(`${S().config.boardNames[after.board - 1]}: ${slotName(S(), after, 'home')} ${after.homeLegs}–${after.awayLegs} ${slotName(S(), after, 'away')}`, 'info', { timeout: 2500 });
+    }
+  }
+  if (T.matchIsDecided(S(), id) && (!wasDecided || (delta > 0 && !changed))) promptFinish(id);
 }
 
 let finishOpen = false;
@@ -176,28 +199,59 @@ async function promptFinish(id) {
   const s = S();
   const f = T.fixtureById(s, id);
   const winner = slotName(s, f, f.homeLegs > f.awayLegs ? 'home' : 'away');
+  let averages = null;
   const v = await ask({
     title: `${s.config.boardNames[f.board - 1]}: ${winner} win!`,
-    body: `<p class="dlg-score"><strong>${esc(slotName(s, f, 'home'))}</strong> <span class="num">${f.homeLegs} – ${f.awayLegs}</span> <strong>${esc(slotName(s, f, 'away'))}</strong></p>
+    body: `<p class="dlg-score"><strong>${slotBlock(s, f, 'home', { cls: 'end' })}</strong> <span class="num">${f.homeLegs} – ${f.awayLegs}</span> <strong>${slotBlock(s, f, 'away')}</strong></p>
+           ${averageInputs(s, f)}
            <p class="muted">Finish the match and record the result? <kbd>Enter</kbd> finishes, <kbd>Esc</kbd> keeps it open.</p>`,
     buttons: [
       { label: 'Undo last leg', value: 'undo' },
       { label: 'Not yet', value: 'cancel' },
       { label: 'Finish match', value: 'finish', kind: 'primary', autofocus: true },
     ],
+    onSubmit(form, value) {
+      if (value !== 'finish') return true;
+      averages = readAverages(form);
+      return averages !== false;
+    },
   });
   finishOpen = false;
-  if (v === 'finish') finish(id);
+  if (v === 'finish') finish(id, averages);
   else if (v === 'undo') {
     const side = T.fixtureById(S(), id).homeLegs > T.fixtureById(S(), id).awayLegs ? 'home' : 'away';
     act('Leg removed', (st) => T.adjustLegs(st, id, side, -1));
   }
 }
 
-function finish(id) {
+/** Two "3-dart average" boxes for a dialog, prefilled from the match. */
+function averageInputs(s, f) {
+  const box = (side) => `<label class="avg-field">${slotBlock(s, f, side)}<span class="avg-label">3-dart average</span>
+      <input name="${side}Avg" inputmode="decimal" autocomplete="off" placeholder="e.g. 54.3" value="${esc(fmtAvg(f[`${side}Avg`]))}"></label>`;
+  return `<div class="avg-fields">${box('home')}${box('away')}</div>
+    <p class="muted small-text">Optional — leave blank if you didn't track it.</p>`;
+}
+
+/** {home, away} from averageInputs, or false (with a message) if one is invalid. */
+function readAverages(form) {
+  const out = {};
+  for (const side of ['home', 'away']) {
+    const v = T.parseAverage(form[`${side}Avg`].value);
+    if (Number.isNaN(v)) {
+      toast(`A 3-dart average must be a number from 0 to ${T.MAX_AVERAGE}, e.g. 54.3.`, 'error');
+      form[`${side}Avg`].focus();
+      return false;
+    }
+    out[side] = v;
+  }
+  return out;
+}
+
+function finish(id, averages = null) {
   const s = S();
   const f = T.fixtureById(s, id);
-  if (!act(`Finished ${stageName(f)}`, (st) => T.finishMatch(st, id))) return;
+  const withAverages = (st) => (averages ? T.setAverage(T.setAverage(st, id, 'home', averages.home ?? ''), id, 'away', averages.away ?? '') : st);
+  if (!act(`Finished ${stageName(f)}`, (st) => T.finishMatch(withAverages(st), id))) return;
   const done = T.fixtureById(S(), id);
   const winner = T.teamName(S(), winnerOf(done));
   toast(`${winner} win ${Math.max(done.homeLegs, done.awayLegs)}–${Math.min(done.homeLegs, done.awayLegs)}.`, 'success', {
@@ -242,24 +296,39 @@ function render() {
   renderSaved();
 
   for (const b of $$('.tabs [data-tab]')) {
-    b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+    const on = b.dataset.tab === tab;
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
+    if (on) $('#main').setAttribute('aria-labelledby', b.id);
   }
 
-  // Keep focus/caret across re-renders (inputs have stable ids).
+  // Keep focus/caret across re-renders: by id, or by the button's data-* identity.
   const active = document.activeElement;
-  const focusId = active && $('#main').contains(active) ? active.id : null;
-  const sel = focusId && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
+  const focusSel = active && $('#main').contains(active) ? focusSelector(active) : null;
+  const sel = focusSel && active.id && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
+  // Text being typed (not yet committed with Enter / leaving the box) survives a redraw.
+  const typing = focusSel && active.id && /^(INPUT|TEXTAREA)$/.test(active.tagName) && active.type !== 'checkbox' ? active.value : null;
 
   const views = { live: viewLive, fixtures: viewFixtures, table: viewTable, teams: viewTeams, settings: viewSettings, backup: viewBackup };
   $('#main').innerHTML = (views[tab] ?? viewLive)(s);
 
-  if (focusId) {
-    const el = document.getElementById(focusId);
-    if (el) {
+  if (focusSel) {
+    const el = $(focusSel, $('#main'));
+    if (el && !el.disabled) {
+      if (typing !== null && 'value' in el) el.value = typing;
       el.focus({ preventScroll: true });
       if (sel && 'setSelectionRange' in el) { try { el.setSelectionRange(...sel); } catch { /* ignore */ } }
+    } else if (el || focusSel.includes('data-action')) {
+      $('#main').focus({ preventScroll: true });
     }
   }
+}
+
+function focusSelector(el) {
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  const keys = ['action', 'id', 'side', 'delta', 'board', 'tab', 'filter', 'idx'];
+  const parts = keys.filter((k) => el.dataset[k] !== undefined).map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`);
+  return parts.length ? parts.join('') : null;
 }
 
 function renderBanners() {
@@ -333,7 +402,7 @@ function phaseCallToAction(s) {
   }
   if (s.phase === 'complete') {
     const v = bracketView(s.fixtures);
-    return `<div class="cta card champion"><div>🏆 <strong>${esc(T.teamName(s, v.championId))}</strong> are the champions. The TV shows the champion screen.</div>
+    return `<div class="cta card champion"><div>🏆 <strong>${esc(teamText(s, v.championId))}</strong> are the champions. The TV shows the champion screen.</div>
       <button data-action="export">Download final backup</button></div>`;
   }
   return '';
@@ -356,6 +425,9 @@ function boardPanel(s, board, suggested) {
         <div class="players">${esc(playersText(s, id)) || '&nbsp;'}</div>
         <div class="legs num" data-legs="${f.id}-${which}">${legs}</div>
         <div class="pips">${Array.from({ length: need }, (_, i) => `<span class="${i < legs ? 'on' : ''}"></span>`).join('')}</div>
+        <label class="avg-live">3-dart avg
+          <input id="avg-${f.id}-${which}" data-change="avg" data-id="${f.id}" data-side="${which}" inputmode="decimal" autocomplete="off"
+            placeholder="–" value="${esc(fmtAvg(f[`${which}Avg`]))}" aria-label="3-dart average for ${esc(slotName(s, f, which))}"></label>
         <div class="leg-btns">
           <button class="minus" data-action="leg" data-id="${f.id}" data-side="${which}" data-delta="-1" ${legs === 0 ? 'disabled' : ''} aria-label="Remove a leg from ${esc(slotName(s, f, which))}">−</button>
           <button class="plus" data-action="leg" data-id="${f.id}" data-side="${which}" data-delta="1" ${decided ? 'disabled' : ''} aria-label="Leg to ${esc(slotName(s, f, which))}">+ Leg <kbd>${esc(key.toUpperCase())}</kbd></button>
@@ -374,7 +446,7 @@ function boardPanel(s, board, suggested) {
   let inner;
   if (suggested) {
     inner = `<p class="muted">Next up</p>
-      <div class="next-teams"><span>${esc(slotName(s, suggested, 'home'))}</span><em>v</em><span>${esc(slotName(s, suggested, 'away'))}</span></div>
+      <div class="next-teams">${slotBlock(s, suggested, 'home', { cls: 'end' })}<em>v</em>${slotBlock(s, suggested, 'away')}</div>
       <p class="muted small-text">${esc(stageName(suggested))} · ${esc(formatLine(s, suggested))}</p>
       <button class="primary big" data-action="start" data-id="${suggested.id}" data-board="${board}">▶ Start on ${name}</button>`;
   } else {
@@ -384,7 +456,7 @@ function boardPanel(s, board, suggested) {
     ? `<label class="picker">Or start another match:
         <select id="pick-${board}" data-change="start-pick" data-board="${board}">
           <option value="">Choose…</option>
-          ${options.map((x) => `<option value="${x.id}">${esc(stageName(x, { short: true }))} — ${esc(slotName(s, x, 'home'))} v ${esc(slotName(s, x, 'away'))}</option>`).join('')}
+          ${options.map((x) => `<option value="${x.id}">${esc(stageName(x, { short: true }))} — ${esc(teamText(s, x.homeId, slotName(s, x, 'home')))} v ${esc(teamText(s, x.awayId, slotName(s, x, 'away')))}</option>`).join('')}
         </select></label>`
     : '';
   return `<article class="board free"><header><h2>${name}</h2><span class="tag">Free</span></header>
@@ -392,7 +464,7 @@ function boardPanel(s, board, suggested) {
 }
 
 function canStartOn(s, f, board) {
-  if (T.liveOnBoard(s, board)) return false;
+  if (T.liveOnBoard(s, board) || T.finalMustWait(s, f)) return false;
   const busy = new Set(T.liveFixtures(s).flatMap((x) => [x.homeId, x.awayId]));
   return !busy.has(f.homeId) && !busy.has(f.awayId);
 }
@@ -424,8 +496,8 @@ function queueList(s, next) {
     const m = marks.get(f.id);
     return `<li>
       <span class="q-stage">${esc(stageName(f, { short: true }))}</span>
-      <span class="q-teams">${esc(slotName(s, f, 'home'))} <em>v</em> ${esc(slotName(s, f, 'away'))}</span>
-      ${m ? `<span class="tag">→ ${esc(s.config.boardNames[m - 1])}</span>` : ''}
+      <span class="q-teams">${slotBlock(s, f, 'home')} <em>v</em> ${slotBlock(s, f, 'away')}</span>
+      ${m ? `<span class="tag" title="${T.liveOnBoard(s, m) ? 'Starts when this board is free' : 'Ready to start now'}">${T.liveOnBoard(s, m) ? 'after' : '→'} ${esc(s.config.boardNames[m - 1])}</span>` : ''}
       <span class="q-actions">
         ${[1, 2].map((b) => canStartOn(s, f, b) ? `<button class="small" data-action="start" data-id="${f.id}" data-board="${b}" title="Start on ${esc(s.config.boardNames[b - 1])}">▶ B${b}</button>` : '').join('')}
       </span>
@@ -446,11 +518,16 @@ function viewFixtures(s) {
   let list = s.fixtures.slice().sort(T.byOrder);
   if (fixtureFilter === 'upcoming') list = list.filter((f) => f.status !== 'done');
   if (fixtureFilter === 'played') list = list.filter((f) => f.status === 'done').sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0));
+  if (fixtureTeam && !T.teamById(s, fixtureTeam)) fixtureTeam = '';
+  if (fixtureTeam) list = list.filter((f) => f.homeId === fixtureTeam || f.awayId === fixtureTeam);
   const { played, total } = T.leagueProgress(s);
   return `${editor}<section class="card">
     <div class="card-head">
       <h2>Fixtures <span class="muted small-text">${played}/${total} league matches played</span></h2>
-      <div class="seg">${Object.entries(filters).map(([k, v]) => `<button data-action="filter" data-filter="${k}" aria-pressed="${k === fixtureFilter}">${v}</button>`).join('')}</div>
+      <div class="fx-filters">
+        <select id="fx-team" data-change="fixture-team" aria-label="Show matches for one team">${teamOptions(s, fixtureTeam, 'All teams')}</select>
+        <div class="seg">${Object.entries(filters).map(([k, v]) => `<button data-action="filter" data-filter="${k}" aria-pressed="${k === fixtureFilter}">${v}</button>`).join('')}</div>
+      </div>
     </div>
     ${s.phase === 'league' && played === 0 && !T.liveFixtures(s).length ? `<p class="muted">Nothing played yet — you can still <button class="link" data-action="back-to-setup">go back to setup</button> to change teams or once/twice.</p>` : ''}
     <table class="fixtures">
@@ -461,7 +538,9 @@ function viewFixtures(s) {
 }
 
 function fixtureRow(s, f) {
-  const score = f.status === 'scheduled' ? '<span class="muted">–</span>' : `<span class="num">${f.homeLegs} – ${f.awayLegs}</span>`;
+  const avgs = f.homeAvg != null || f.awayAvg != null
+    ? `<span class="avg-under num" title="3-dart averages">${fmtAvg(f.homeAvg) || '–'} · ${fmtAvg(f.awayAvg) || '–'}</span>` : '';
+  const score = f.status === 'scheduled' ? '<span class="muted">–</span>' : `<span class="num">${f.homeLegs} – ${f.awayLegs}</span>${avgs}`;
   const w = winnerOf(f);
   let status;
   let actions = '';
@@ -487,9 +566,9 @@ function fixtureRow(s, f) {
   return `<tr class="${f.status}">
     <td class="num muted">${f.order}</td>
     <td>${esc(stageName(f, { short: f.stage === 'league' }))}${f.stage === 'league' && f.round ? `<span class="muted small-text"> · R${f.round}</span>` : ''}</td>
-    <td class="r ${w && w === f.homeId ? 'win' : ''}">${esc(slotName(s, f, 'home'))}</td>
+    <td class="r ${w && w === f.homeId ? 'win' : ''}">${slotBlock(s, f, 'home')}</td>
     <td class="c">${score}</td>
-    <td class="${w && w === f.awayId ? 'win' : ''}">${esc(slotName(s, f, 'away'))}</td>
+    <td class="${w && w === f.awayId ? 'win' : ''}">${slotBlock(s, f, 'away')}</td>
     <td>${status}</td>
     <td class="r actions">${actions}</td>
   </tr>`;
@@ -497,16 +576,16 @@ function fixtureRow(s, f) {
 
 function teamOptions(s, selected = '', placeholder = 'Choose team…') {
   return `<option value="">${esc(placeholder)}</option>${s.teams
-    .map((t) => `<option value="${t.id}" ${t.id === selected ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}`;
+    .map((t) => `<option value="${t.id}" ${t.id === selected ? 'selected' : ''}>${esc(teamText(s, t.id))}</option>`).join('')}`;
 }
 
 /** Add / paste / check league fixtures (league phase). */
 function fixtureEditor(s) {
   const b = T.leagueBalance(s);
-  const name = (id) => esc(T.teamName(s, id));
+  const name = (id) => esc(teamText(s, id));
   const pair = (p) => `${name(p.a)} v ${name(p.b)}${p.expected > 1 || p.count > 1 ? ` <span class="muted">(${p.count}/${p.expected})</span>` : ''}`;
   const list = (items, max = 12) => `${items.slice(0, max).map(pair).join(' · ')}${items.length > max ? ` · <span class="muted">+${items.length - max} more</span>` : ''}`;
-  const perTeam = s.teams.map((t) => `<span class="chip">${esc(t.name)} <b class="num">${b.perTeam.get(t.id) ?? 0}</b></span>`).join('');
+  const perTeam = s.teams.map((t) => `<span class="chip">${teamBlock(s, t.id, { inline: true })} <b class="num">${b.perTeam.get(t.id) ?? 0}</b></span>`).join('');
   const once = s.config.doubleRoundRobin ? 'twice' : 'once';
   let status;
   if (!s.fixtures.some((f) => f.stage === 'league')) {
@@ -589,14 +668,18 @@ async function editResultDialog(id) {
   const v = await ask({
     title: `Edit result · ${stageName(f)}`,
     body: `<div class="edit-score">
-      <label>${esc(slotName(s, f, 'home'))}<select name="home" class="num">${opts(f.homeLegs)}</select></label>
+      <label>${slotBlock(s, f, 'home')}<select name="home" class="num">${opts(f.homeLegs)}</select></label>
       <span>–</span>
-      <label>${esc(slotName(s, f, 'away'))}<select name="away" class="num">${opts(f.awayLegs)}</select></label>
-    </div><p class="muted">Best of ${bestOfFor(s.config, f.stage)}: the winner needs exactly ${need} legs. The table updates instantly.</p>`,
+      <label>${slotBlock(s, f, 'away')}<select name="away" class="num">${opts(f.awayLegs)}</select></label>
+    </div><p class="muted">${legsFormat(bestOfFor(s.config, f.stage), { capital: true })}: the winner needs exactly ${need} leg${need === 1 ? '' : 's'}. The table updates instantly.</p>
+    ${averageInputs(s, f)}`,
     buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Save result', value: 'save', kind: 'primary', autofocus: true }],
     onSubmit(form) {
       try {
+        const averages = readAverages(form);
+        if (averages === false) return false;
         result = T.editResult(S(), id, Number(form.home.value), Number(form.away.value));
+        result = T.setAverage(T.setAverage(result, id, 'home', averages.home ?? ''), id, 'away', averages.away ?? '');
         return true;
       } catch (e) {
         toast(e.message, 'error');
@@ -614,17 +697,18 @@ async function editResultDialog(id) {
 
 function standingsTable(s, { compact = false } = {}) {
   const rows = T.standings(s);
+  const showAvg = rows.some((r) => r.avg !== null);
   const live = new Set(T.liveFixtures(s).filter((f) => f.stage === 'league').flatMap((f) => [f.homeId, f.awayId]));
   const q = s.config.qualifiers;
   return `<table class="standings ${compact ? 'compact' : ''}">
     <thead><tr><th>#</th><th>Team</th><th class="r">P</th><th class="r">W</th><th class="r">L</th>
-      ${compact ? '' : '<th class="r">LF</th><th class="r">LA</th>'}<th class="r">LD</th><th class="r">Pts</th>${compact ? '' : '<th>Form</th>'}</tr></thead>
+      ${compact ? '' : '<th class="r">LF</th><th class="r">LA</th>'}<th class="r">LD</th>${showAvg ? '<th class="r" title="Mean 3-dart average over league matches where it was recorded">Avg</th>' : ''}<th class="r">Pts</th>${compact ? '' : '<th>Form</th>'}</tr></thead>
     <tbody>${rows.map((r, i) => `<tr class="${i < q ? 'q' : ''} ${i === q - 1 ? 'cut' : ''}">
       <td class="num">${r.position}${r.tiedWithPrev ? '<span class="tie" title="Level on every tiebreaker — separated by name only">=</span>' : ''}</td>
-      <td>${esc(r.name)}${live.has(r.teamId) ? ' <span class="dot-live" title="Playing now"></span>' : ''}</td>
+      <td class="team-cell">${teamBlock(s, r.teamId, { inline: compact })}${live.has(r.teamId) ? ' <span class="dot-live" title="Playing now"></span>' : ''}</td>
       <td class="r num">${r.played}</td><td class="r num">${r.won}</td><td class="r num">${r.lost}</td>
       ${compact ? '' : `<td class="r num">${r.legsFor}</td><td class="r num">${r.legsAgainst}</td>`}
-      <td class="r num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td><td class="r num strong">${r.points}</td>
+      <td class="r num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="r num avg-col">${fmtAvg(r.avg) || '–'}</td>` : ''}<td class="r num strong">${r.points}</td>
       ${compact ? '' : `<td class="form">${r.form.map((x) => `<span class="${x}">${x}</span>`).join('')}</td>`}
     </tr>`).join('')}</tbody></table>`;
 }
@@ -663,7 +747,7 @@ function bracketSummary(s) {
     const line = (side) => {
       const id = side === 'home' ? f.homeId : f.awayId;
       const legs = side === 'home' ? f.homeLegs : f.awayLegs;
-      return `<div class="b-team ${w && w === id ? 'win' : ''}"><span>${esc(slotName(s, f, side))}</span><span class="num">${f.status === 'scheduled' ? '' : legs}</span></div>`;
+      return `<div class="b-team ${w && w === id ? 'win' : ''}">${slotBlock(s, f, side)}<span class="num">${f.status === 'scheduled' ? '' : legs}</span></div>`;
     };
     return `<div class="b-match ${f.status}"><div class="b-title">${esc(stageName(f))}${f.status === 'live' ? ' <span class="tag live-tag">LIVE</span>' : ''}</div>${line('home')}${line('away')}</div>`;
   };
@@ -671,7 +755,7 @@ function bracketSummary(s) {
     <div class="col">${box(v.semis[0])}${box(v.semis[1])}</div>
     <div class="col">${box(v.final)}${box(v.third)}</div>
   </div>
-  ${v.championId ? `<p class="champ-line">🏆 Champions: <strong>${esc(T.teamName(s, v.championId))}</strong></p>` : ''}`;
+  ${v.championId ? `<p class="champ-line">🏆 Champions: <strong>${esc(teamText(s, v.championId))}</strong></p>` : ''}`;
 }
 
 async function knockoutPreview() {
@@ -684,10 +768,10 @@ async function knockoutPreview() {
     toast('Finish (or cancel) the live matches first.', 'error');
     return;
   }
-  const teamOpts = (sel) => rows.map((r) => `<option value="${r.teamId}" ${r.teamId === sel ? 'selected' : ''}>${r.position}. ${esc(r.name)} (${r.points} pts)</option>`).join('');
+  const teamOpts = (sel) => rows.map((r) => `<option value="${r.teamId}" ${r.teamId === sel ? 'selected' : ''}>${r.position}. ${esc(teamText(s, r.teamId))} — ${r.points} pts</option>`).join('');
   const seedSelect = (i) => `<label>Seed ${i + 1}<select name="seed${i}">${teamOpts(seeding.seeds[i])}</select></label>`;
   const tied = seeding.tie
-    ? `<p class="banner warn"><strong>Tie for the last place:</strong> ${seeding.tiedTeams.map((id) => esc(T.teamName(s, id))).join(', ')} are level on every tiebreaker. They are ordered by name below — change the seeds if you settle it another way (e.g. a nearest-the-bull throw-off).</p>`
+    ? `<p class="banner warn"><strong>Tie for the last place:</strong> ${seeding.tiedTeams.map((id) => esc(teamText(s, id))).join(', ')} are level on every tiebreaker. They are ordered by name below — change the seeds if you settle it another way (e.g. a nearest-the-bull throw-off).</p>`
     : '';
   const incomplete = remaining
     ? `<p class="banner error"><strong>${remaining} league match${remaining === 1 ? '' : 'es'} not played.</strong> Starting now drops them from the table for good.</p>`
@@ -699,12 +783,12 @@ async function knockoutPreview() {
     body: `${incomplete}${tied}
       <div class="seeds">${[0, 1, 2, 3].map(seedSelect).join('')}</div>
       <div class="seed-preview" id="seed-preview"></div>
-      <p class="muted">Semi-finals best of ${s.config.bestOf.semi}, final best of ${s.config.bestOf.final}${s.config.thirdPlace ? `, 3rd place best of ${s.config.bestOf.third}` : ''}. You can cancel the knockout until its first match starts.</p>`,
+      <p class="muted">Semi-finals ${legsFormat(s.config.bestOf.semi)}, final ${legsFormat(s.config.bestOf.final)}${s.config.thirdPlace ? `, 3rd place ${legsFormat(s.config.bestOf.third)}` : ''}. You can cancel the knockout until its first match starts.</p>`,
     buttons: [{ label: 'Cancel', value: 'cancel' }, { label: remaining ? 'Start knockout anyway' : 'Start knockout', value: 'go', kind: remaining ? 'primary danger' : 'primary', autofocus: true }],
     onOpen(form) {
       const update = () => {
         const ids = [0, 1, 2, 3].map((i) => form[`seed${i}`].value);
-        const n = (i) => esc(T.teamName(s, ids[i]));
+        const n = (i) => teamBlock(s, ids[i]);
         $('#seed-preview', form).innerHTML = `<div><span class="muted">Semi-final 1</span> ${n(0)} <em>v</em> ${n(3)}</div><div><span class="muted">Semi-final 2</span> ${n(1)} <em>v</em> ${n(2)}</div>`
           + (new Set(ids).size < 4 ? '<p class="error-text">Each seed must be a different team.</p>' : '');
       };
@@ -737,7 +821,8 @@ function viewTeams(s) {
   const matches = (n * (n - 1)) / 2 * (s.config.doubleRoundRobin ? 2 : 1);
   const rows = s.teams.map((t, i) => `<tr>
     <td class="num muted">${i + 1}</td>
-    <td><input id="tn-${t.id}" data-change="team-name" data-id="${t.id}" value="${esc(t.name)}" maxlength="60" aria-label="Team name"></td>
+    <td><input id="tn-${t.id}" data-change="team-name" data-id="${t.id}" value="${esc(t.name)}" maxlength="60" aria-label="Team name">
+      ${t.name.length > LONG_NAME ? '<span class="hint-warn" title="Long names may be shortened with … on the TV">⚠ may be cut short on TV</span>' : ''}</td>
     <td><input id="tp0-${t.id}" data-change="team-player" data-idx="0" data-id="${t.id}" value="${esc(t.players[0])}" maxlength="40" placeholder="Player 1" aria-label="Player 1"></td>
     <td><input id="tp1-${t.id}" data-change="team-player" data-idx="1" data-id="${t.id}" value="${esc(t.players[1])}" maxlength="40" placeholder="Player 2" aria-label="Player 2"></td>
     <td class="r actions">${setup ? `
@@ -749,8 +834,8 @@ function viewTeams(s) {
   const startBlock = setup
     ? `<section class="card start-card">
         <h2>Ready?</h2>
-        <p><strong>${n}</strong> teams · play each other <strong>${s.config.doubleRoundRobin ? 'twice' : 'once'}</strong> · <strong>${n >= 2 ? matches : 0}</strong> league matches · best of ${s.config.bestOf.league}</p>
-        <p class="muted small-text">Change once/twice, best-of and points in <a href="#" data-action="tab" data-tab="settings">Settings</a>.</p>
+        <p><strong>${n}</strong> teams · play each other <strong>${s.config.doubleRoundRobin ? 'twice' : 'once'}</strong> · <strong>${n >= 2 ? matches : 0}</strong> league matches · ${legsFormat(s.config.bestOf.league)}</p>
+        <p class="muted small-text">Change once/twice, match length and points in <a href="#" data-action="tab" data-tab="settings">Settings</a>.</p>
         <button class="primary big" data-action="start-league" ${n < MIN_TEAMS ? 'disabled' : ''}>Generate fixtures &amp; start league</button>
         <p><button class="link" data-action="start-league-manual" ${n < MIN_TEAMS ? 'disabled' : ''}>…or start with an empty fixture list and set the matches yourself</button></p>
         <p class="muted small-text">Either way you can add, delete, edit and reorder matches on the Fixtures tab until they're played.</p>
@@ -791,7 +876,7 @@ function viewSettings(s) {
   const stagePlayed = (stage) => s.fixtures.some((f) => f.stage === stage && f.status !== 'scheduled');
   const boSelect = (stage, label) => `<label>${label}
     <select id="bo-${stage}" data-change="bestof" data-stage="${stage}" ${stagePlayed(stage) ? 'disabled title="Locked: a match has started"' : ''}>
-      ${[1, 3, 5, 7, 9, 11].map((n) => `<option value="${n}" ${n === c.bestOf[stage] ? 'selected' : ''}>Best of ${n}</option>`).join('')}
+      ${[1, 3, 5, 7, 9, 11].map((n) => `<option value="${n}" ${n === c.bestOf[stage] ? 'selected' : ''}>${legsFormat(n, { capital: true })}</option>`).join('')}
     </select></label>`;
   const keyInput = (k, label) => `<label>${label}<input id="key-${k}" class="key" data-change="key" data-key="${k}" value="${esc(c.keys[k].toUpperCase())}" maxlength="1"></label>`;
   return `<section class="settings-grid">
@@ -800,6 +885,7 @@ function viewSettings(s) {
       <label>Title<input id="cfg-title" data-change="cfg" data-field="title" value="${esc(c.title)}" maxlength="80"></label>
       <label>Subtitle (venue / date)<input id="cfg-subtitle" data-change="cfg" data-field="subtitle" value="${esc(c.subtitle)}" maxlength="120" placeholder="e.g. The Red Lion · Friday 4 Dec"></label>
       <label>Accent colour<input id="cfg-accent" type="color" data-change="cfg" data-field="accent" value="${esc(c.accent)}"></label>
+      <label class="check"><input id="cfg-logo" type="checkbox" data-change="cfg-bool" data-field="showLogo" ${c.showLogo ? 'checked' : ''}> Show the JWI logo on the TV</label>
       <label>Game (shown on TV)<input id="cfg-game" data-change="cfg" data-field="gameType" value="${esc(c.gameType)}" maxlength="40"></label>
       <div class="row2">
         <label>Board 1 name<input id="cfg-b1" data-change="board-name" data-idx="0" value="${esc(c.boardNames[0])}" maxlength="30"></label>
@@ -813,13 +899,15 @@ function viewSettings(s) {
           <option value="twice" ${c.doubleRoundRobin ? 'selected' : ''}>Twice</option>
           <option value="once" ${c.doubleRoundRobin ? '' : 'selected'}>Once</option>
         </select></label>
-      <div class="row2">${boSelect('league', 'League matches')}${boSelect('semi', 'Semi-finals')}</div>
-      <div class="row2">${boSelect('final', 'Final')}${boSelect('third', '3rd place play-off')}</div>
+      <fieldset class="lengths"><legend>Match length</legend>
+        ${boSelect('league', 'League matches')}${boSelect('semi', 'Semi-finals')}${boSelect('final', 'Final')}${boSelect('third', '3rd place play-off')}
+      </fieldset>
       <div class="row2">
         <label>Points for a win<input id="pts-win" type="number" min="0" max="99" data-change="points" data-which="win" value="${c.points.win}"></label>
         <label>Points for a loss<input id="pts-loss" type="number" min="0" max="99" data-change="points" data-which="loss" value="${c.points.loss}"></label>
       </div>
       <label class="check"><input id="cfg-third" type="checkbox" data-change="cfg-bool" data-field="thirdPlace" ${c.thirdPlace ? 'checked' : ''}> 3rd place play-off</label>
+      <label class="check"><input id="cfg-final-alone" type="checkbox" data-change="cfg-bool" data-field="finalAlone" ${c.finalAlone ? 'checked' : ''}> Play the final on its own (after every other match)</label>
       <p class="muted small-text">Top ${c.qualifiers} qualify for the semi-finals (1st v 4th, 2nd v 3rd).</p>
     </div>
     <div class="card">
@@ -947,7 +1035,7 @@ const actions = {
   'fixture-remove': (d) => {
     const f = T.fixtureById(S(), d.id);
     if (act(`Deleted ${stageName(f)}`, (s) => T.removeFixture(s, d.id))) {
-      toast(`Deleted ${T.teamName(S(), f.homeId)} v ${T.teamName(S(), f.awayId)}.`, 'info', { action: { label: 'Undo', fn: undo } });
+      toast(`Deleted ${teamText(S(), f.homeId)} v ${teamText(S(), f.awayId)}.`, 'info', { action: { label: 'Undo', fn: undo } });
     }
   },
   'fixtures-clear': async () => {
@@ -983,7 +1071,7 @@ const actions = {
     const s = S();
     const n = s.teams.length;
     const matches = (n * (n - 1)) / 2 * (s.config.doubleRoundRobin ? 2 : 1);
-    if (await confirmAction('Generate fixtures and start the league?', `${n} teams, each pair plays ${s.config.doubleRoundRobin ? 'twice' : 'once'}: <strong>${matches} matches</strong>, best of ${s.config.bestOf.league}. Teams can't be added or removed after this (names can still be edited).`, 'Start league')) {
+    if (await confirmAction('Generate fixtures and start the league?', `${n} teams, each pair plays ${s.config.doubleRoundRobin ? 'twice' : 'once'}: <strong>${matches} matches</strong>, ${legsFormat(s.config.bestOf.league)}. Teams can't be added or removed after this (names can still be edited).`, 'Start league')) {
       if (act('Started league', T.startLeague)) {
         tab = 'live';
         prefs.set('tab', tab);
@@ -1035,6 +1123,20 @@ $('.tabs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-tab]');
   if (b) actions.tab(b.dataset);
 });
+// Arrow keys move between tabs (WAI-ARIA tabs pattern).
+$('.tabs').addEventListener('keydown', (e) => {
+  const tabs = $$('.tabs [data-tab]');
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  const t = tabs[(to + tabs.length) % tabs.length];
+  tab = t.dataset.tab;
+  prefs.set('tab', tab);
+  render();
+  t.focus();
+});
 
 const changes = {
   'team-name': (el) => act('Renamed team', (s) => T.updateTeam(s, el.dataset.id, { name: el.value })) || render(),
@@ -1052,7 +1154,7 @@ const changes = {
     act('Renamed board', (s) => T.updateConfig(s, { boardNames: names }));
   },
   rr: (el) => act('Changed settings', (s) => T.updateConfig(s, { doubleRoundRobin: el.value === 'twice' })) || render(),
-  bestof: (el) => act('Changed best-of', (s) => T.updateConfig(s, { bestOf: { [el.dataset.stage]: Number(el.value) } })) || render(),
+  bestof: (el) => act('Changed match length', (s) => T.updateConfig(s, { bestOf: { [el.dataset.stage]: Number(el.value) } })) || render(),
   points: (el) => act('Changed points', (s) => T.updateConfig(s, { points: { [el.dataset.which]: Number(el.value) } })),
   key: (el) => {
     const v = el.value.trim().toLowerCase();
@@ -1060,6 +1162,14 @@ const changes = {
     const keys = S().config.keys;
     if (Object.entries(keys).some(([k, x]) => k !== el.dataset.key && x === v)) { toast('That key is already used.', 'error'); render(); return; }
     act('Changed shortcut', (s) => T.updateConfig(s, { keys: { [el.dataset.key]: v } }));
+  },
+  'fixture-team': (el) => { fixtureTeam = el.value; prefs.set('fixtureTeam', fixtureTeam); render(); },
+  avg: (el) => {
+    const side = el.dataset.side;
+    if (act('Recorded 3-dart average', (s) => T.setAverage(s, el.dataset.id, side, el.value))) return;
+    // Invalid: put the last valid value back and keep the cursor there to retype.
+    el.value = fmtAvg(T.fixtureById(S(), el.dataset.id)?.[`${side}Avg`]);
+    el.select();
   },
   'start-pick': (el) => {
     if (el.value) act('Started match', (s) => T.startMatch(s, el.value, Number(el.dataset.board)));
@@ -1078,6 +1188,7 @@ $('#main').addEventListener('submit', (e) => {
   e.preventDefault();
   if (form.dataset.form === 'add-team') {
     const ok = act('Added team', (s) => T.addTeam(s, form.name.value, [form.p0.value, form.p1.value]));
+    if (ok && form.name.value.trim().length > LONG_NAME) toast('Long name — it may be shortened with … on parts of the TV.', 'info');
     if (ok) {
       form.reset();
       requestAnimationFrame(() => $('#new-name')?.focus());
@@ -1123,7 +1234,7 @@ document.addEventListener('keydown', (e) => {
     undo();
     return;
   }
-  if (typing || e.ctrlKey || e.metaKey || e.altKey || tab !== 'live') return;
+  if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
   const s = S();
   const key = e.key.toLowerCase();
   const map = {
@@ -1137,7 +1248,7 @@ document.addEventListener('keydown', (e) => {
   const f = T.liveOnBoard(s, hit[0]);
   if (!f) return;
   e.preventDefault();
-  changeLegs(f.id, hit[1], e.shiftKey ? -1 : 1);
+  changeLegs(f.id, hit[1], e.shiftKey ? -1 : 1, { announce: tab !== 'live' });
 });
 
 $('#undo').addEventListener('click', undo);
@@ -1182,6 +1293,32 @@ store.subscribe((_s, meta) => {
   }
   render();
 });
+
+// ---------------------------------------------------------------- TV presence
+// The TV window sends a heartbeat; show whether one is listening right now.
+let tvSeenAt = 0;
+const tvConnected = () => Date.now() - tvSeenAt < 7000;
+function renderTvStatus() {
+  const el = $('#tv-status');
+  const ok = tvConnected();
+  el.className = `tv-status ${ok ? 'ok' : 'off'}`;
+  el.textContent = ok ? '📺 TV connected' : '📺 TV not connected';
+  el.title = ok
+    ? 'A TV window is open in this browser and receiving updates.'
+    : `No TV window is listening. Open it with “Open TV window”, from the same address (${location.origin}) and the same browser — not a private window.`;
+}
+store.onMessage((msg) => {
+  if (msg.type === 'tv-beat' && !msg.preview) {
+    const wasConnected = tvConnected();
+    tvSeenAt = Date.now();
+    if (!wasConnected) renderTvStatus();
+  }
+});
+setInterval(() => {
+  store.post({ type: 'admin-beat', at: Date.now() });
+  renderTvStatus();
+}, 2000);
+store.post({ type: 'admin-beat', at: Date.now() });
 
 setInterval(renderSaved, 1000);
 navigator.storage?.persist?.().catch(() => {});

@@ -45,6 +45,8 @@ export function normalizeState(raw) {
       status: ['scheduled', 'live', 'done'].includes(f.status) ? f.status : 'scheduled',
       homeLegs: Math.max(0, Number(f.homeLegs) || 0),
       awayLegs: Math.max(0, Number(f.awayLegs) || 0),
+      homeAvg: storedAverage(f.homeAvg),
+      awayAvg: storedAverage(f.awayAvg),
       order: Number(f.order) || 0,
       startedAt: f.startedAt ?? null,
       finishedAt: f.finishedAt ?? null,
@@ -61,6 +63,62 @@ export function normalizeState(raw) {
     fixtures,
     seeds: Array.isArray(raw.seeds) ? raw.seeds.slice(0, 4) : null,
   };
+}
+
+/**
+ * Consistency check for a normalised state (used before importing a backup).
+ * Returns a list of human-readable problems; empty means it is safe to use.
+ */
+export function validateState(state) {
+  const problems = [];
+  const teamIds = new Set();
+  for (const t of state.teams) {
+    if (teamIds.has(t.id)) problems.push(`Team id “${t.id}” is used twice.`);
+    teamIds.add(t.id);
+  }
+  const names = new Set();
+  for (const t of state.teams) {
+    const n = t.name.toLowerCase();
+    if (names.has(n)) problems.push(`Two teams are called “${t.name}”.`);
+    names.add(n);
+  }
+  const fixtureIds = new Set();
+  const boards = new Map();
+  const playing = new Map();
+  for (const f of state.fixtures) {
+    const label = `Match ${f.id}`;
+    if (fixtureIds.has(f.id)) problems.push(`${label} appears twice.`);
+    fixtureIds.add(f.id);
+    for (const id of [f.homeId, f.awayId]) {
+      if (id !== null && !teamIds.has(id)) problems.push(`${label} refers to a team that doesn't exist.`);
+    }
+    if (f.homeId && f.homeId === f.awayId) problems.push(`${label} has a team playing itself.`);
+    if (f.status !== 'scheduled' && (!f.homeId || !f.awayId)) problems.push(`${label} has started but its teams are not known.`);
+    const need = legsToWinFor(state.config, f.stage);
+    if (f.homeLegs > need || f.awayLegs > need) problems.push(`${label} has more legs than best of ${state.config.bestOf[f.stage]} allows.`);
+    if (f.status === 'done' && !isDecided(f, state.config)) problems.push(`${label} is finished but has no winner (${f.homeLegs}–${f.awayLegs}).`);
+    for (const k of ['homeAvg', 'awayAvg']) {
+      const v = f[k];
+      if (v !== null && v !== undefined && (typeof v !== 'number' || !(v >= 0 && v <= MAX_AVERAGE))) problems.push(`${label} has an impossible 3-dart average (${v}).`);
+      if (v != null && f.status === 'scheduled') problems.push(`${label} has an average but hasn't been played.`);
+    }
+    if (f.status === 'live') {
+      if (f.board !== 1 && f.board !== 2) problems.push(`${label} is live but not on a board.`);
+      else if (boards.has(f.board)) problems.push(`Two matches are live on board ${f.board}.`);
+      else boards.set(f.board, f.id);
+      for (const id of [f.homeId, f.awayId]) {
+        if (playing.has(id)) problems.push(`A team is live in two matches at once.`);
+        playing.set(id, f.id);
+      }
+    }
+  }
+  const ko = state.fixtures.filter((f) => f.stage !== 'league');
+  if ((state.phase === 'knockout' || state.phase === 'complete') && !ko.some((f) => f.id === 'SF1')) {
+    problems.push(`Phase is “${state.phase}” but there are no semi-finals.`);
+  }
+  if (state.phase === 'setup' && state.fixtures.length) problems.push('Phase is “setup” but fixtures exist.');
+  if (state.seeds && state.seeds.some((id) => !teamIds.has(id))) problems.push('Knockout seeds refer to unknown teams.');
+  return [...new Set(problems)];
 }
 
 function normalizePlayers(p) {
@@ -118,6 +176,7 @@ export function nextUp(state) {
     const pick = queue.find(
       (f) =>
         !taken.has(f.id) &&
+        !finalMustWait(state, f, taken) &&
         ![f.homeId, f.awayId].some((t) => busyElsewhere.has(t) || reserved.has(t)),
     );
     if (pick) {
@@ -127,6 +186,16 @@ export function nextUp(state) {
     }
   }
   return result;
+}
+
+/**
+ * With config.finalAlone the final only starts once every other knockout
+ * match is finished, so it gets the room's full attention. `alsoTaken` lets
+ * nextUp treat matches it has just suggested as occupying a board.
+ */
+export function finalMustWait(state, f, alsoTaken = new Set()) {
+  if (f.stage !== 'final' || !state.config.finalAlone) return false;
+  return state.fixtures.some((x) => x.stage !== 'league' && x.id !== f.id && (x.status !== 'done' || alsoTaken.has(x.id)));
 }
 
 export function matchWinnerId(f) {
@@ -259,7 +328,7 @@ export function updateConfig(state, patch) {
   for (const stage of STAGES) {
     if (merged.bestOf[stage] === state.config.bestOf[stage]) continue;
     if (state.fixtures.some((f) => f.stage === stage && f.status !== 'scheduled')) {
-      fail(`Best-of for ${stageLabel(stage)} matches cannot change after one has started.`);
+      fail(`The match length for ${stageLabel(stage)} matches cannot change after one has started.`);
     }
   }
   return mutate(state, (s) => {
@@ -531,9 +600,10 @@ export function startMatch(state, id, board) {
   if (onBoard) fail(`${state.config.boardNames[board - 1]} is busy.`);
   const busy = new Set(liveFixtures(state).flatMap((x) => [x.homeId, x.awayId]));
   if (busy.has(f.homeId) || busy.has(f.awayId)) fail('One of these teams is already playing.');
+  if (finalMustWait(state, f)) fail('The final is played on its own — finish the other matches first (or turn this off in Settings).');
   return mutate(state, (s) => {
     const m = getFixture(s, id);
-    Object.assign(m, { status: 'live', board, homeLegs: 0, awayLegs: 0, startedAt: Date.now(), finishedAt: null });
+    Object.assign(m, { status: 'live', board, homeLegs: 0, awayLegs: 0, homeAvg: null, awayAvg: null, startedAt: Date.now(), finishedAt: null });
   });
 }
 
@@ -542,7 +612,7 @@ export function cancelMatch(state, id) {
   return mutate(state, (s) => {
     const f = getFixture(s, id);
     if (f.status !== 'live') fail('That match is not live.');
-    Object.assign(f, { status: 'scheduled', board: null, homeLegs: 0, awayLegs: 0, startedAt: null });
+    Object.assign(f, { status: 'scheduled', board: null, homeLegs: 0, awayLegs: 0, homeAvg: null, awayAvg: null, startedAt: null });
   });
 }
 
@@ -605,11 +675,49 @@ export function unplayMatch(state, id) {
   if (f.stage === 'league' && state.phase !== 'league') fail('Go back to the league first (no knockout matches played).');
   return mutate(state, (s) => {
     const m = getFixture(s, id);
-    Object.assign(m, { status: 'scheduled', board: null, homeLegs: 0, awayLegs: 0, startedAt: null, finishedAt: null });
+    Object.assign(m, { status: 'scheduled', board: null, homeLegs: 0, awayLegs: 0, homeAvg: null, awayAvg: null, startedAt: null, finishedAt: null });
     if (m.stage !== 'league') {
       s.fixtures = resolveKnockout(s.fixtures);
       updatePhaseAfterKnockout(s);
     }
+  });
+}
+
+// ---------- 3-dart averages ----------
+
+/** Highest possible 3-dart average (three treble 20s every visit). */
+export const MAX_AVERAGE = 180;
+
+function storedAverage(v) {
+  const n = typeof v === 'number' ? v : v == null || v === '' ? null : Number(v);
+  return n === null || !Number.isFinite(n) ? null : n;
+}
+
+/**
+ * Parse what the organiser typed: "54.3", "54,3", " 61 " → number (2 dp);
+ * empty → null (clears it). Anything else → NaN.
+ */
+export function parseAverage(input) {
+  if (input === null || input === undefined) return null;
+  const text = String(input).trim().replace(',', '.');
+  if (text === '') return null;
+  if (!/^\d{1,3}(\.\d*)?$/.test(text)) return NaN;
+  const n = Number(text);
+  return n >= 0 && n <= MAX_AVERAGE ? Math.round(n * 100) / 100 : NaN;
+}
+
+/**
+ * Record a team's 3-dart average for a live or finished match.
+ * `value` may be a number or the raw text from an input; empty clears it.
+ */
+export function setAverage(state, id, side, value) {
+  if (side !== 'home' && side !== 'away') fail('Side must be home or away.');
+  const avg = typeof value === 'number' ? parseAverage(String(value)) : parseAverage(value);
+  if (Number.isNaN(avg)) fail(`A 3-dart average must be a number from 0 to ${MAX_AVERAGE}, e.g. 54.3.`);
+  return mutate(state, (s) => {
+    const f = getFixture(s, id);
+    if (f.status === 'scheduled') fail('Averages can be recorded once the match has started.');
+    f[side === 'home' ? 'homeAvg' : 'awayAvg'] = avg;
   });
 }
 

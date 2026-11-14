@@ -4,7 +4,7 @@ import { createStore, createLocalStorageAdapter } from './store.js';
 import * as T from './logic/tournament.js';
 import { bracketView, winnerOf, knockoutSeeding } from './logic/bracket.js';
 import { legsToWinFor } from './logic/config.js';
-import { esc, stageName, slotName, playersText, formatLine, applyTheme, registerServiceWorker } from './view.js';
+import { esc, stageName, slotName, playersText, teamBlock, slotBlock, fmtAvg, formatLine, legsFormat, applyTheme, registerServiceWorker } from './view.js';
 
 const W = 1920;
 const H = 1080;
@@ -135,9 +135,10 @@ function render({ transition = false, changes = null } = {}) {
 
 function waitingScreen() {
   return `<div class="waiting-screen">
-    <div class="big-dart">🎯</div>
+    <img class="waiting-logo" src="img/logo.png" alt="James Watkins Invitational">
     <h1>Waiting for the organiser…</h1>
-    <p>Open <strong>admin.html</strong> in another window of this browser on this laptop. This screen updates by itself.</p>
+    <p>Open <strong>admin.html</strong> in another window of <strong>this browser</strong> on this laptop. This screen updates by itself.</p>
+    <p class="origin">The admin page must use the same address: <strong>${esc(location.origin)}</strong> — and not a private window.</p>
   </div>`;
 }
 
@@ -151,7 +152,7 @@ function header(s) {
   const pct = s.phase === 'league' && total ? Math.round((played / total) * 100) : s.phase === 'setup' ? 0 : 100;
   return `<header class="tv-head">
     <div class="tv-title">
-      <span class="dart-logo">🎯</span>
+      ${s.config.showLogo ? '<img class="head-logo" src="img/logo.png" alt="">' : '<span class="dart-logo">🎯</span>'}
       <div><h1>${esc(s.config.title)}</h1>${s.config.subtitle ? `<p>${esc(s.config.subtitle)}</p>` : ''}</div>
     </div>
     <div class="tv-phase">
@@ -175,6 +176,9 @@ function body(s, view, ch) {
   }
 }
 
+/** The logo already spells out the tournament name, so don't repeat it next to the logo. */
+const logoSaysTitle = (s) => s.config.showLogo && /james\s+watkins\s+invitational/i.test(s.config.title);
+
 const panelTitle = (t, extra = '') => `<h2 class="panel-title">${esc(t)}${extra}</h2>`;
 
 // ---------- setup
@@ -184,10 +188,10 @@ function setupView(s) {
   const cols = n > 12 ? 4 : n > 6 ? 3 : 2;
   return `<section class="setup">
     <div class="setup-hero">
-      <div class="eyebrow">Doubles darts</div>
-      <h2>${esc(s.config.title)}</h2>
+      ${s.config.showLogo ? `<img class="hero-logo" src="img/logo.png" alt="${esc(s.config.title)}">` : '<div class="eyebrow">Doubles darts</div>'}
+      ${logoSaysTitle(s) ? '' : `<h2 class="${s.config.showLogo ? 'with-logo' : ''}">${esc(s.config.title)}</h2>`}
       ${s.config.subtitle ? `<p class="sub">${esc(s.config.subtitle)}</p>` : ''}
-      <p class="rules">${s.config.doubleRoundRobin ? 'Everyone plays everyone twice' : 'Everyone plays everyone once'} · best of ${s.config.bestOf.league} legs · top 4 to the semi-finals</p>
+      <p class="rules">${s.config.doubleRoundRobin ? 'Everyone plays everyone twice' : 'Everyone plays everyone once'} · ${legsFormat(s.config.bestOf.league)} · top 4 to the semi-finals</p>
     </div>
     <div class="setup-teams">
       <h3>${n ? `${n} team${n === 1 ? '' : 's'} registered` : 'Teams to be announced'}</h3>
@@ -212,7 +216,7 @@ function liveCard(s, board, suggested, ch) {
     return `<article class="live-card idle">
       <div class="lc-head"><span class="board-name">${name}</span><span class="pill">${suggested ? 'Next up' : 'Free'}</span></div>
       ${suggested
-        ? `<div class="lc-next"><span class="h">${esc(slotName(s, suggested, 'home'))}</span><em>v</em><span class="a">${esc(slotName(s, suggested, 'away'))}</span></div>
+        ? `<div class="lc-next">${slotBlock(s, suggested, 'home', { cls: 'h end' })}<em>v</em>${slotBlock(s, suggested, 'away', { cls: 'a' })}</div>
            <div class="lc-meta">${esc(stageName(suggested))} · get ready!</div>`
         : `<div class="lc-next muted-big">${s.phase === 'complete' ? 'All done' : 'No match'}</div>`}
     </article>`;
@@ -226,6 +230,7 @@ function liveCard(s, board, suggested, ch) {
       <div class="lc-name">${esc(slotName(s, f, which))}</div>
       <div class="lc-players">${esc(playersText(s, id))}</div>
       <div class="lc-pips">${Array.from({ length: need }, (_, i) => `<i class="${i < legs ? 'on' : ''}"></i>`).join('')}</div>
+      ${f[`${which}Avg`] != null ? `<div class="lc-avg">3-dart avg <b class="num" data-avg="${f.id}-${which}">${fmtAvg(f[`${which}Avg`])}</b></div>` : ''}
     </div>`;
   };
   return `<article class="live-card">
@@ -257,8 +262,8 @@ function leagueView(s, ch) {
   <section class="league-grid">
     <div class="panel table-panel">${panelTitle('League table', `<span class="hint">Top ${s.config.qualifiers} reach the semi-finals</span>`)}${tableHTML(s, ch.rows)}</div>
     <div class="side-col">
-      <div class="panel">${panelTitle('Up next')}${upNextHTML(s, 4)}</div>
-      <div class="panel">${panelTitle('Latest results')}${resultsHTML(s, 4, ch.fresh)}</div>
+      <div class="panel">${panelTitle('Up next')}${upNextHTML(s, 3)}</div>
+      <div class="panel">${panelTitle('Latest results')}${resultsHTML(s, 3, ch.fresh)}</div>
     </div>
   </section>`;
 }
@@ -270,16 +275,17 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
   const rowH = Math.max(28, Math.min(full ? 72 : 60, Math.floor(avail / Math.max(rows.length, 1))));
   const now = Date.now();
   const showForm = full;
-  return `<table class="tv-table" style="--row-h:${rowH}px">
-    <thead><tr><th class="pos">#</th><th class="team">Team</th><th>P</th><th>W</th><th>L</th><th>+/-</th><th class="pts">Pts</th>${showForm ? '<th class="form-h">Form</th>' : ''}</tr></thead>
+  const showAvg = rows.some((r) => r.avg !== null);
+  return `<table class="tv-table ${showAvg ? 'with-avg' : ''}" style="--row-h:${rowH}px">
+    <thead><tr><th class="pos">#</th><th class="team">Team</th><th>P</th><th>W</th><th>L</th><th>+/-</th>${showAvg ? '<th class="avg-h">Avg</th>' : ''}<th class="pts">Pts</th>${showForm ? '<th class="form-h">Form</th>' : ''}</tr></thead>
     <tbody>${rows.map((r, i) => {
       const mv = movement.get(r.teamId);
       const arrow = mv && mv.until > now ? `<span class="mv ${mv.dir}">${mv.dir === 'up' ? '▲' : '▼'}</span>` : '';
       return `<tr data-team-row="${r.teamId}" class="${i < q ? 'q' : ''} ${i === q - 1 && rows.length > q ? 'cut' : ''}">
         <td class="pos num">${r.position}</td>
-        <td class="team"><span class="nm">${esc(r.name)}</span>${live.has(r.teamId) ? '<span class="live-dot"></span>' : ''}${arrow}</td>
+        <td class="team">${teamBlock(s, r.teamId, { inline: rows.length > 10, cls: 'nm' })}${live.has(r.teamId) ? '<span class="live-dot"></span>' : ''}${arrow}</td>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.lost}</td>
-        <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>
+        <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="num avg">${fmtAvg(r.avg) || '–'}</td>` : ''}
         <td class="pts num">${r.points}</td>
         ${showForm ? `<td class="form">${r.form.map((x) => `<i class="${x}">${x}</i>`).join('')}</td>` : ''}
       </tr>`;
@@ -295,7 +301,7 @@ function upNextHTML(s, n) {
   return `<ol class="list">${q.map((f) => {
     const b = boardOf.get(f.id);
     return `<li><span class="tagc">${b ? esc(s.config.boardNames[b - 1]) : esc(stageName(f, { short: true }))}</span>
-      <span class="teams"><span>${esc(slotName(s, f, 'home'))}</span><em>v</em><span>${esc(slotName(s, f, 'away'))}</span></span></li>`;
+      <span class="teams">${slotBlock(s, f, 'home')}<em>v</em>${slotBlock(s, f, 'away')}</span></li>`;
   }).join('')}</ol>`;
 }
 
@@ -306,16 +312,16 @@ function resultsHTML(s, n, fresh = []) {
     const w = winnerOf(f);
     return `<li class="${fresh.includes(f.id) ? 'fresh' : ''}">
       <span class="tagc">${esc(stageName(f, { short: true }))}</span>
-      <span class="res"><span class="${w === f.homeId ? 'w' : 'l'}">${esc(slotName(s, f, 'home'))}</span>
+      <span class="res">${slotBlock(s, f, 'home', { cls: w === f.homeId ? 'w' : 'l' })}
       <b class="num">${f.homeLegs}–${f.awayLegs}</b>
-      <span class="${w === f.awayId ? 'w' : 'l'}">${esc(slotName(s, f, 'away'))}</span></span></li>`;
+      ${slotBlock(s, f, 'away', { cls: w === f.awayId ? 'w' : 'l' })}</span></li>`;
   }).join('')}</ol>`;
 }
 
 function fixturesView(s, ch) {
   return `<section class="fixtures-grid">
-    <div class="panel">${panelTitle('Up next')}${upNextHTML(s, 10)}</div>
-    <div class="panel">${panelTitle('Results')}${resultsHTML(s, 10, ch.fresh)}</div>
+    <div class="panel">${panelTitle('Up next')}${upNextHTML(s, 8)}</div>
+    <div class="panel">${panelTitle('Results')}${resultsHTML(s, 8, ch.fresh)}</div>
   </section>`;
 }
 
@@ -353,7 +359,7 @@ function bracketHTML(s, rows) {
       const id = which === 'home' ? f.homeId : f.awayId;
       const legs = which === 'home' ? f.homeLegs : f.awayLegs;
       const state = w ? (w === id ? 'win' : 'lose') : '';
-      return `<div class="bm-team ${state} ${id ? '' : 'tbd'}">${f.stage === 'semi' ? seedNo(id) : ''}<span class="nm">${esc(slotName(s, f, which))}</span>
+      return `<div class="bm-team ${state} ${id ? '' : 'tbd'}">${f.stage === 'semi' ? seedNo(id) : ''}${slotBlock(s, f, which, { cls: 'nm' })}
         <span class="lg num" ${f.status === 'live' ? `data-legs="${f.id}-${which}"` : ''}>${f.status === 'scheduled' ? '' : legs}</span></div>`;
     };
     const status = f.status === 'live' ? `<span class="pill live">● LIVE · ${esc(s.config.boardNames[f.board - 1])}</span>` : '';
@@ -382,14 +388,15 @@ function championView(s) {
   const players = playersText(s, champ);
   const score = f ? `${Math.max(f.homeLegs, f.awayLegs)}–${Math.min(f.homeLegs, f.awayLegs)}` : '';
   return `<section class="champion">
-    <div class="ch-eyebrow">${esc(s.config.title)} · Champions</div>
-    <div class="ch-trophy">🏆</div>
+    ${s.config.showLogo
+      ? `<img class="ch-logo" src="img/logo.png" alt=""><div class="ch-eyebrow">${logoSaysTitle(s) ? '' : `${esc(s.config.title)} · `}Champions</div>`
+      : `<div class="ch-eyebrow">${esc(s.config.title)} · Champions</div><div class="ch-trophy">🏆</div>`}
     <h2 class="ch-name">${esc(T.teamName(s, champ))}</h2>
     ${players ? `<p class="ch-players">${esc(players)}</p>` : ''}
     <p class="ch-final">beat <strong>${esc(T.teamName(s, v.runnerUpId))}</strong> <span class="num">${score}</span> in the final</p>
     <div class="ch-podium">
-      <div><span>Runners-up</span><strong>${esc(T.teamName(s, v.runnerUpId))}</strong></div>
-      ${v.thirdId ? `<div><span>Third place</span><strong>${esc(T.teamName(s, v.thirdId))}</strong></div>` : ''}
+      <div><span>Runners-up</span><strong>${esc(T.teamName(s, v.runnerUpId))}</strong>${playersText(s, v.runnerUpId) ? `<em>${esc(playersText(s, v.runnerUpId))}</em>` : ''}</div>
+      ${v.thirdId ? `<div><span>Third place</span><strong>${esc(T.teamName(s, v.thirdId))}</strong>${playersText(s, v.thirdId) ? `<em>${esc(playersText(s, v.thirdId))}</em>` : ''}</div>` : ''}
     </div>
   </section>`;
 }
@@ -519,6 +526,26 @@ if (!PREVIEW) {
 } else {
   document.body.classList.add('preview', 'no-cursor');
 }
+
+// ---------------------------------------------------------------- presence
+// Tell the admin window we're here; notice if the admin window goes quiet.
+let adminSeenAt = 0;
+store.onMessage((msg) => {
+  if (msg.type === 'admin-beat') {
+    adminSeenAt = Date.now();
+    updateLink();
+  }
+});
+function updateLink() {
+  const badge = $('#link-badge');
+  if (!badge || PREVIEW) return;
+  // Only warn once the page has had time to hear from the admin window.
+  const quiet = Date.now() - adminSeenAt > 10000 && performance.now() > 10000;
+  badge.hidden = !quiet;
+}
+const beat = () => store.post({ type: 'tv-beat', at: Date.now(), preview: PREVIEW });
+beat();
+setInterval(() => { beat(); updateLink(); }, 2000);
 
 // ---------------------------------------------------------------- go
 

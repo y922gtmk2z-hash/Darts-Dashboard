@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#05070c">
   <title>Darts Live</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AF%3C/text%3E%3C/svg%3E">
+  <link rel="icon" type="image/png" href="img/icon-192.png">
+  <link rel="apple-touch-icon" href="img/icon-192.png">
+  <link rel="preload" as="image" href="img/logo.png">
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/tv.css">
   <script type="module" src="js/tv.js"></script>
@@ -13,8 +15,9 @@
 <body>
   <div id="viewport">
     <canvas id="confetti" aria-hidden="true"></canvas>
-    <div id="stage" aria-live="polite"></div>
+    <div id="stage"></div>
   </div>
+  <div id="link-badge" hidden>Not connected to the admin window</div>
   <div id="fs-hint" hidden>Click anywhere for full screen · <kbd>F</kbd></div>
 </body>
 </html>

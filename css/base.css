@@ -6,7 +6,7 @@
   --line: #2b3750;
   --text: #f1f4fa;
   --muted: #9ba8bf;
-  --faint: #6d7a92;
+  --faint: #8a96ad; /* ≥4.5:1 on every panel colour */
   --accent: #ffc928;
   --accent-ink: #1a1400;
   --red: #ef4b4f;
@@ -27,3 +27,12 @@ body {
 }
 .num, .tabnum { font-variant-numeric: tabular-nums; }
 [hidden] { display: none !important; }
+
+/* Team name + players ("who is in which team"), used on both pages. */
+.who { display: inline-flex; flex-direction: column; min-width: 0; max-width: 100%; line-height: 1.15; vertical-align: middle; }
+.who-name, .who-players { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.who-players { font-size: 0.68em; font-weight: 500; color: var(--muted); margin-top: 0.12em; }
+.who.inline { flex-direction: row; align-items: baseline; gap: 0.55em; }
+.who.inline .who-name { flex: 0 0 auto; } /* the team name never gives way to the players */
+.who.inline .who-players { flex: 0 10 auto; margin-top: 0; }
+.r .who, .who.end { align-items: flex-end; text-align: right; }

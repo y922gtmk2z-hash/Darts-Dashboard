@@ -1,6 +1,6 @@
 // Shared presentation helpers for the admin and TV pages (DOM-free strings).
 import { teamById } from './logic/tournament.js';
-import { legsToWinFor, bestOfFor } from './logic/config.js';
+import { bestOfFor, legsToWin } from './logic/config.js';
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
@@ -28,10 +28,46 @@ export function playersText(state, id) {
   return p.filter(Boolean).join(' & ');
 }
 
+/** A 3-dart average for display: 54.3 → "54.30"; missing → "". */
+export function fmtAvg(n) {
+  return typeof n === 'number' && Number.isFinite(n) ? n.toFixed(2) : '';
+}
+
+/** Plain text for <option>s and messages: "Double Trouble (Sam Reid & Alex Moore)". */
+export function teamText(state, id, fallback = 'TBD') {
+  const name = teamById(state, id)?.name ?? fallback;
+  const players = playersText(state, id);
+  return players ? `${name} (${players})` : name;
+}
+
+/**
+ * Team name with its players, as HTML. Stacked (players on a smaller second
+ * line) by default; `inline: true` puts them after the name on one line.
+ */
+export function teamBlock(state, id, { fallback = 'TBD', inline = false, cls = '' } = {}) {
+  const name = id ? teamById(state, id)?.name ?? '?' : fallback;
+  const players = id ? playersText(state, id) : '';
+  return `<span class="who ${inline ? 'inline' : ''} ${cls}" title="${esc(players ? `${name}: ${players}` : name)}">`
+    + `<span class="who-name">${esc(name)}</span>`
+    + (players ? `<span class="who-players">${esc(players)}</span>` : '')
+    + '</span>';
+}
+
+/** teamBlock for one side of a fixture (handles "Winner SF1" placeholders). */
+export function slotBlock(state, f, side, opts = {}) {
+  const id = side === 'home' ? f.homeId : f.awayId;
+  return teamBlock(state, id, { ...opts, fallback: slotName(state, f, side) });
+}
+
+/** "First to 3 legs (best of 5)" — the way organisers talk about a match length. */
+export function legsFormat(bestOf, { capital = false, short = false } = {}) {
+  const need = legsToWin(bestOf);
+  const first = `${capital ? 'F' : 'f'}irst to ${need}${short ? '' : need === 1 ? ' leg' : ' legs'}`;
+  return bestOf === 1 ? `${capital ? 'S' : 's'}ingle leg` : `${first} (best of ${bestOf})`;
+}
+
 export function formatLine(state, f) {
-  const bo = bestOfFor(state.config, f.stage);
-  const parts = [`Best of ${bo}`];
-  if (bo > 1) parts.push(`first to ${legsToWinFor(state.config, f.stage)}`);
+  const parts = [legsFormat(bestOfFor(state.config, f.stage), { capital: true })];
   if (state.config.gameType) parts.push(state.config.gameType);
   return parts.join(' · ');
 }

@@ -285,7 +285,7 @@ dialog::backdrop { background: rgba(3, 6, 12, 0.72); backdrop-filter: blur(3px);
 .seed-preview .muted { display: inline-block; width: 7.5rem; font-weight: 500; }
 
 /* ---------- toasts ---------- */
-#toasts { position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%); display: grid; gap: 0.5rem; z-index: 100; width: min(560px, calc(100vw - 2rem)); }
+#toasts { position: fixed; right: 1.25rem; bottom: 1.25rem; display: grid; gap: 0.5rem; z-index: 100; width: min(420px, calc(100vw - 2rem)); }
 .toast { display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 0.8rem 0.7rem 1rem; border-radius: 12px; background: var(--panel-3); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); animation: toast-in 0.2s ease-out; }
 .toast > span { flex: 1; }
 .toast.error { border-color: var(--red); background: color-mix(in srgb, var(--red) 22%, var(--panel)); }
@@ -322,3 +322,51 @@ dialog::backdrop { background: rgba(3, 6, 12, 0.72); backdrop-filter: blur(3px);
 .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.6rem; font-size: 0.85rem; }
 .chip b { color: var(--accent); margin-left: 0.2rem; }
+
+/* ---------- review fixes ---------- */
+.logo { width: 60px; height: auto; display: block; }
+.status-group { margin-left: auto; display: flex; align-items: center; gap: 0.9rem; }
+.status-group .saved { margin-left: 0; }
+.tv-status { font-size: 0.85rem; font-weight: 600; white-space: nowrap; padding: 0.15rem 0.55rem; border-radius: 6px; cursor: help; }
+.tv-status.ok { color: var(--green); }
+.tv-status.off { color: #ffd27a; background: color-mix(in srgb, var(--accent) 14%, transparent); }
+/* A disabled main button should look clearly unavailable, not dim gold. */
+button.primary:disabled { background: var(--panel-3); border-color: var(--line); color: var(--muted); opacity: 1; }
+.hint-warn { display: block; font-size: 0.75rem; color: #ffd27a; margin-top: 0.15rem; }
+.fx-filters { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+.fx-filters select { width: auto; min-width: 200px; min-height: 36px; }
+.problems { margin: 0.5rem 0 0; padding-left: 1.2rem; color: #ffb3b5; }
+.problems li { margin: 0.2rem 0; }
+.tabs button:focus-visible { outline-offset: -3px; }
+fieldset.lengths { border: 1px solid var(--line); border-radius: 10px; padding: 0.4rem 0.8rem 0.1rem; margin: 0 0 0.75rem; }
+fieldset.lengths legend { font-size: 0.85rem; color: var(--muted); padding: 0 0.3rem; }
+fieldset.lengths label { margin-bottom: 0.6rem; }
+
+/* players under team names */
+.q-teams { display: flex; align-items: center; gap: 0.4rem; min-width: 0; flex-wrap: wrap; }
+.q-teams .who { max-width: 48%; }
+.next-teams .who { max-width: 48%; }
+.next-teams .who-name { white-space: normal; }
+.next-teams .who-players { font-size: 0.5em; white-space: normal; }
+.dlg-score { display: flex; align-items: center; justify-content: center; gap: 0.6rem; }
+.b-team { align-items: center; gap: 0.5rem; }
+.b-team .who { flex: 1; }
+.team-cell .who { max-width: calc(100% - 1.2rem); }
+.edit-score label .who { color: var(--text); font-size: 0.95rem; }
+.seed-preview .who { display: inline-flex; vertical-align: top; }
+.chip .who-players { color: var(--faint); }
+.fixtures td .who { max-width: 100%; }
+/* readable player names on the laptop screen */
+main .who-players { font-size: 0.8em; }
+.next-teams .who-players { font-size: 0.55em; }
+
+/* ---------- 3-dart averages ---------- */
+.avg-live { display: flex; align-items: center; gap: 0.45rem; margin: 0.15rem 0 0; font-size: 0.8rem; color: var(--muted); }
+.avg-live input { width: 6.2rem; min-height: 36px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.avg-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 0.8rem 0 0.2rem; }
+.avg-field { gap: 0.25rem; }
+.avg-field .who { color: var(--text); font-size: 0.95rem; }
+.avg-label { font-size: 0.78rem; }
+.avg-field input { font-size: 1.15rem; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+.avg-under { display: block; font-size: 0.75rem; color: var(--muted); }
+.avg-col { color: var(--muted); }

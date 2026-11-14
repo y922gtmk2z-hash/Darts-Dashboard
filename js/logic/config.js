@@ -3,20 +3,24 @@
 export const STAGES = ['league', 'semi', 'third', 'final'];
 
 export const DEFAULT_CONFIG = Object.freeze({
-  title: 'Doubles Darts Tournament',
+  title: 'James Watkins Invitational',
   subtitle: '',
-  accent: '#ffc928',
+  accent: '#f2b632',
   gameType: '501 · double out',
   doubleRoundRobin: true, // every team plays every other team twice
   bestOf: Object.freeze({ league: 3, semi: 3, third: 3, final: 3 }),
   points: Object.freeze({ win: 3, loss: 0 }),
   qualifiers: 4, // fixed: top 4 -> semi-finals
   thirdPlace: false,
+  finalAlone: true, // the final waits until every other match is finished
+  showLogo: true,
   autoBackup: false, // download a JSON backup after every finished match
   boardNames: Object.freeze(['Board 1', 'Board 2']),
   // Keyboard shortcuts on the admin page. Key = +1 leg, Shift+key = -1 leg.
   keys: Object.freeze({ b1Home: 'q', b1Away: 'a', b2Home: 'p', b2Away: 'l' }),
 });
+
+const LEGACY_DEFAULT_TITLE = 'Doubles Darts Tournament';
 
 export const MIN_TEAMS = 4;
 export const MAX_TEAMS = 16;
@@ -49,7 +53,8 @@ export function normalizeConfig(input = {}) {
     return typeof v === 'string' && v.trim() ? v.trim().slice(0, 30) : d.boardNames[i];
   });
   return {
-    title: typeof c.title === 'string' && c.title.trim() ? c.title.trim().slice(0, 80) : d.title,
+    // Tournaments saved before branding used the old generic default title.
+    title: typeof c.title === 'string' && c.title.trim() && c.title.trim() !== LEGACY_DEFAULT_TITLE ? c.title.trim().slice(0, 80) : d.title,
     subtitle: typeof c.subtitle === 'string' ? c.subtitle.trim().slice(0, 120) : d.subtitle,
     accent: /^#[0-9a-f]{6}$/i.test(c.accent ?? '') ? c.accent : d.accent,
     gameType: typeof c.gameType === 'string' ? c.gameType.trim().slice(0, 40) : d.gameType,
@@ -61,6 +66,8 @@ export function normalizeConfig(input = {}) {
     },
     qualifiers: 4,
     thirdPlace: typeof c.thirdPlace === 'boolean' ? c.thirdPlace : d.thirdPlace,
+    finalAlone: typeof c.finalAlone === 'boolean' ? c.finalAlone : d.finalAlone,
+    showLogo: typeof c.showLogo === 'boolean' ? c.showLogo : d.showLogo,
     autoBackup: typeof c.autoBackup === 'boolean' ? c.autoBackup : d.autoBackup,
     boardNames,
     keys,
