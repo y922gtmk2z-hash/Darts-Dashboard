@@ -433,3 +433,8 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 .ls-sub { font-size: 19px; font-weight: 700; color: var(--accent); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ls-idle { font-size: 24px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ls-idle strong { color: var(--text); }
+
+/* estimated finish, under the progress bar in the header */
+.tv-eta { font-size: 21px; font-weight: 600; color: var(--muted); }
+.tv-eta:empty { display: none; }
+.tv-eta b { color: var(--text); font-weight: 800; }

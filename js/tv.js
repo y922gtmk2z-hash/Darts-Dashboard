@@ -177,6 +177,7 @@ function header(s) {
     <div class="tv-phase">
       <span>${esc(phase)}</span>
       ${s.phase === 'league' ? `<div class="progress"><i style="width:${pct}%"></i></div>` : ''}
+      <div class="tv-eta" id="eta">${etaText(s)}</div>
     </div>
     <div class="tv-clock num" id="clock"></div>
   </header>`;
@@ -615,6 +616,19 @@ function championView(s) {
 function updateClock() {
   const el = $('#clock');
   if (el) el.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const eta = $('#eta');
+  const s = store.get();
+  if (eta && s) eta.innerHTML = etaText(s);
+}
+
+/** "Est. finish ~10:45 PM · 1h 40m to go" (rounded up to 5 minutes), or nothing. */
+function etaText(s) {
+  const e = I.finishEstimate(s);
+  if (!e) return '';
+  const mins = Math.ceil(e.ms / 300000) * 5;
+  const left = mins <= 5 ? 'nearly done' : mins < 60 ? `${mins}m to go` : `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''} to go`;
+  const at = new Date(Math.ceil(e.finishAt / 300000) * 300000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `Est. finish <b>~${esc(at)}</b> · ${esc(left)}`;
 }
 setInterval(updateClock, 10000);
 

@@ -152,3 +152,29 @@ test('stakes: a climb is preferred over the plain fallback', () => {
   const st = I.matchStakes(state(['A', 'B', 'C', 'D'], fx), fx[3]);
   assert.ok(!st.lines[0].startsWith('With a win'), st.lines[0]);
 });
+
+test('finish estimate: pace of the evening, knockout added, null without data', () => {
+  const MIN = 60000;
+  const mk = (i, extra) => ({ id: `L${i}`, stage: 'league', round: 1, order: i, homeId: 'A', awayId: 'B', board: null, homeLegs: 2, awayLegs: 0, ...extra });
+  // 4 matches finished 10 min apart (two boards) → one board takes 20 min a match.
+  const done = [0, 1, 2, 3].map((i) => mk(i + 1, { status: 'done', startedAt: i * 10 * MIN, finishedAt: (i + 1) * 10 * MIN }));
+  const todo = [5, 6, 7, 8].map((i) => mk(i, { status: 'scheduled', startedAt: null, finishedAt: null }));
+  const s = { config, teams: teams('A', 'B'), phase: 'league', fixtures: [...done, ...todo] };
+  assert.equal(I.boardSlot(s), 20 * MIN);
+  const e = I.finishEstimate(s, 40 * MIN);
+  // 4 league matches on 2 boards = 40 min, semis 20, final 20 (all best of 3).
+  assert.equal(e.ms, 80 * MIN);
+  assert.equal(e.finishAt, 120 * MIN);
+  // Too little data, or results typed in all at once → no estimate.
+  assert.equal(I.finishEstimate({ ...s, fixtures: [...done.slice(0, 2), ...todo] }), null);
+  const burst = done.map((f, i) => ({ ...f, startedAt: 1000 + i, finishedAt: 2000 + i }));
+  assert.equal(I.finishEstimate({ ...s, fixtures: [...burst, ...todo] }), null);
+  // Burst entry, but some matches were scored live → median length + 3 min changeover.
+  const mixed = [...burst, mk(9, { status: 'done', startedAt: 3000 - 15 * MIN, finishedAt: 3000 }), mk(10, { status: 'done', startedAt: 3001 - 17 * MIN, finishedAt: 3001 })];
+  assert.equal(I.boardSlot({ ...s, fixtures: [...mixed, ...todo] }), 19 * MIN);
+  // A live match counts for what is left of it.
+  const live = mk(5, { status: 'live', startedAt: 35 * MIN, finishedAt: null });
+  const e2 = I.finishEstimate({ ...s, fixtures: [...done, live, ...todo.slice(1)] }, 40 * MIN);
+  assert.equal(e2.ms, ((15 + 60) / 2 + 40) * MIN);
+  assert.equal(I.finishEstimate({ ...s, phase: 'complete' }), null);
+});
