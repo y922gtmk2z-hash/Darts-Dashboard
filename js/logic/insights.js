@@ -267,3 +267,67 @@ export function records(state) {
   });
   return { streaks, longest, hot, whitewashes, upset };
 }
+
+// ---------------------------------------------------------------- estimated finish
+
+const MIN = 60000;
+const median = (xs) => {
+  const v = [...xs].sort((a, b) => a - b);
+  const m = v.length >> 1;
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+};
+
+/**
+ * How long one board takes per league match, changeovers included (ms), or null.
+ * Main source: the pace of the evening, the time between the last finishes
+ * (up to 12), doubled because two boards run at once. If results came in a
+ * burst (typed in afterwards) that pace is meaningless, so fall back to the
+ * median length of matches that were really scored live, plus 3 minutes.
+ */
+export function boardSlot(state) {
+  const cfg = state.config;
+  const factor = (f) => (cfg.bestOf[f.stage] ?? 3) / (cfg.bestOf.league ?? 3);
+  const done = state.fixtures.filter((f) => f.status === 'done' && f.finishedAt).sort(byFinish);
+  const recent = done.slice(-12);
+  if (recent.length >= 3) {
+    const gap = (recent[recent.length - 1].finishedAt - recent[0].finishedAt) / (recent.length - 1);
+    const perMatch = gap / mean(recent.map(factor)); // in league-match units
+    if (perMatch >= 2 * MIN && perMatch <= 60 * MIN) return perMatch * 2;
+  }
+  const lengths = done.filter((f) => f.startedAt && f.finishedAt - f.startedAt >= 2 * MIN)
+    .slice(-12).map((f) => (f.finishedAt - f.startedAt) / factor(f));
+  if (lengths.length >= 2) return median(lengths) + 3 * MIN;
+  return null;
+}
+
+/**
+ * Estimated time left in the tournament: { ms, finishAt } or null when there
+ * isn't enough to go on (fewer than 3 results, or none scored live) or nothing
+ * is left. League matches share the two boards; the semi-finals run side by
+ * side; the final (and 3rd place play-off) after them. A match being played
+ * counts for what's left of its usual length.
+ */
+export function finishEstimate(state, now = Date.now()) {
+  if (state.phase !== 'league' && state.phase !== 'knockout') return null;
+  const slot = boardSlot(state);
+  if (!slot) return null;
+  const cfg = state.config;
+  const len = (stage) => slot * ((cfg.bestOf[stage] ?? 3) / (cfg.bestOf.league ?? 3));
+  const left = (f) => {
+    if (f.status === 'done') return 0;
+    const full = len(f.stage);
+    if (f.status === 'live' && f.startedAt) return Math.max(full * 0.15, full - (now - f.startedAt));
+    return full;
+  };
+  // League: total board time shared by the two boards.
+  const league = state.fixtures.filter((f) => f.stage === 'league');
+  let ms = league.reduce((t, f) => t + left(f), 0) / 2;
+  // Knockout: placeholders until it starts.
+  const ko = (stage, id) => state.fixtures.find((f) => f.id === id) ?? { stage, status: 'scheduled' };
+  const semis = Math.max(left(ko('semi', 'SF1')), left(ko('semi', 'SF2')));
+  const final = left(ko('final', 'F'));
+  const third = cfg.thirdPlace ? left(ko('third', '3P')) : 0;
+  ms += semis + (cfg.finalAlone ? third + final : Math.max(third, final));
+  if (ms <= 0) return null;
+  return { ms, finishAt: now + ms };
+}

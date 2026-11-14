@@ -51,9 +51,9 @@ function currentView(s) {
   const v = viewsFor(s);
   return v[rotateIndex % v.length];
 }
-/** Seconds per screen, 0 = no rotation. The admin preview pane never rotates. */
+/** Seconds per screen, 0 = no rotation. The admin preview pane follows the setting too. */
 function rotateSeconds(s) {
-  if (PREVIEW || PINNED) return 0;
+  if (PINNED) return 0;
   return URL_ROTATE ?? s?.config?.tvRotate ?? 0;
 }
 let rotateTimer = 0;
@@ -146,7 +146,7 @@ function render({ transition = false, changes = null } = {}) {
         el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 1100, easing: 'cubic-bezier(.2,.8,.2,1)' });
       }
     }
-    for (const id of ch.bumps) $(`[data-legs="${id}"]`, stage)?.classList.add('bump');
+    for (const id of ch.bumps) for (const el of $$(`[data-legs="${id}"]`, stage)) el.classList.add('bump');
   }
   updateClock();
   confetti.toggle(s.phase === 'complete' && view === 'auto');
@@ -177,19 +177,30 @@ function header(s) {
     <div class="tv-phase">
       <span>${esc(phase)}</span>
       ${s.phase === 'league' ? `<div class="progress"><i style="width:${pct}%"></i></div>` : ''}
+      <div class="tv-eta" id="eta">${etaText(s)}</div>
     </div>
     <div class="tv-clock num" id="clock"></div>
   </header>`;
 }
 
+// Height the live strip takes from the other screens (strip + gap).
+const STRIP_H = 142;
+
 function body(s, view, ch) {
   if (s.phase === 'setup') return setupView(s);
+  if (view === 'auto') return viewBody(s, view, ch, false);
+  // Every other screen (rotating or pinned) keeps the live scores along the bottom.
+  const strip = T.liveFixtures(s).length > 0;
+  return viewBody(s, view, ch, strip) + (strip ? liveStripHTML(s) : '');
+}
+
+function viewBody(s, view, ch, strip) {
   switch (view) {
-    case 'table': return `<section class="panel full">${panelTitle('League table')}${tableHTML(s, ch.rows, { full: true })}</section>`;
+    case 'table': return `<section class="panel full">${panelTitle('League table')}${tableHTML(s, ch.rows, { full: true, avail: 790 - (strip ? STRIP_H : 0) })}</section>`;
     case 'fixtures': return fixturesView(s, ch);
     case 'chart': return `<section class="panel full">${panelTitle('Race for the top', `<span class="hint">League position after each match · top ${s.config.qualifiers} highlighted</span>`)}${positionChartHTML(s)}</section>`;
-    case 'grid': return `<section class="panel full">${panelTitle('Head to head', '<span class="hint">Read across: the row team’s score first</span>')}${gridHTML(s, ch.rows)}</section>`;
-    case 'stats': return statsView(s);
+    case 'grid': return `<section class="panel full">${panelTitle('Head to head', '<span class="hint">Read across: the row team’s score first</span>')}${gridHTML(s, ch.rows, strip ? STRIP_H : 0)}</section>`;
+    case 'stats': return statsView(s, strip);
     case 'bracket': return `<section class="panel full">${panelTitle(s.phase === 'league' ? 'Knockout · if the league ended now' : 'Knockout')}${bracketHTML(s, ch.rows)}</section>`;
     default:
       if (s.phase === 'league') return leagueView(s, ch);
@@ -263,6 +274,30 @@ function liveCard(s, board, suggested, ch, waiting = false) {
     </div>
     ${stakesHTML(s, f)}
   </article>`;
+}
+
+/** Live scores along the bottom of the non-live screens: one slot per board. */
+function liveStripHTML(s) {
+  const next = T.nextUp(s);
+  const slot = (board) => {
+    const name = esc(s.config.boardNames[board - 1]);
+    const f = T.liveOnBoard(s, board);
+    if (!f) {
+      const n = next[board] ?? next.waiting?.[board];
+      return `<div class="ls-slot idle"><span class="ls-board">${name}</span>
+        <span class="ls-idle">${n ? `Next up: <strong>${esc(slotName(s, n, 'home'))}</strong> v <strong>${esc(slotName(s, n, 'away'))}</strong>` : 'Free'}</span></div>`;
+    }
+    const lead = f.homeLegs === f.awayLegs ? '' : f.homeLegs > f.awayLegs ? 'home' : 'away';
+    const stake = I.matchStakes(s, f).lines[0];
+    return `<div class="ls-slot"><span class="ls-board">${name}<i>● LIVE</i></span>
+      <div class="ls-main">
+        <span class="ls-team h ${lead === 'home' ? 'lead' : ''}">${esc(slotName(s, f, 'home'))}</span>
+        <span class="ls-score num"><b data-legs="${f.id}-home">${f.homeLegs}</b>–<b data-legs="${f.id}-away">${f.awayLegs}</b></span>
+        <span class="ls-team a ${lead === 'away' ? 'lead' : ''}">${esc(slotName(s, f, 'away'))}</span>
+      </div>
+      <span class="ls-sub">${esc(stake ?? stageName(f))}</span></div>`;
+  };
+  return `<section class="live-strip">${slot(1)}${slot(2)}</section>`;
 }
 
 /** "What's at stake" line under a live match (falls back to the match format). */
@@ -501,11 +536,11 @@ function positionChartHTML(s) {
 
 // ---------- head-to-head grid
 
-function gridHTML(s, rows) {
+function gridHTML(s, rows, less = 0) {
   const h2h = I.headToHead(s);
   const ids = rows.map((r) => r.teamId);
   const n = ids.length;
-  const rowH = Math.min(90, Math.floor((750 - (n + 2) * 4) / (n + 0.7))); // rows + header + spacing fit the panel
+  const rowH = Math.min(90, Math.floor((750 - less - (n + 2) * 4) / (n + 0.7))); // rows + header + spacing fit the panel
   const cell = (a, b) => {
     if (a === b) return '<td class="self"></td>';
     const list = h2h.get(`${a}|${b}`) ?? [];
@@ -526,7 +561,8 @@ function gridHTML(s, rows) {
 
 // ---------- stats: averages, streaks and records
 
-function statsView(s) {
+function statsView(s, strip = false) {
+  const few = strip ? 2 : 3; // the live strip takes the room of one entry per list
   const a = I.averagesBoard(s);
   const r = I.records(s);
   const name = (id) => esc(T.teamName(s, id));
@@ -537,8 +573,8 @@ function statsView(s) {
     <ol class="bars">${a.season.map((x, i) => `<li><span class="rk">${i + 1}</span><span class="nm">${name(x.teamId)}</span>
       <span class="bar"><i style="width:${((x.avg / max) * 100).toFixed(1)}%"></i></span><b class="num">${fmtAvg(x.avg)}</b><em>${x.count} match${x.count === 1 ? '' : 'es'}</em></li>`).join('')}</ol>
     <h3>Best single match</h3>
-    <ol class="facts">${a.bestMatch.slice(0, 3).map((x) => `<li><b class="num">${fmtAvg(x.avg)}</b><span>${name(x.teamId)} <em>v ${vsOf(x.fixture, x.teamId)} · ${esc(stageName(x.fixture, { short: true }))}</em></span></li>`).join('')}</ol>
-    ${a.improved.length ? `<h3>On the up</h3><ol class="facts">${a.improved.map((x) => `<li><b class="num up">+${x.change.toFixed(1)}</b><span>${name(x.teamId)} <em>last 3: ${fmtAvg(x.recent)} · before: ${fmtAvg(x.earlier)}</em></span></li>`).join('')}</ol>` : ''}`;
+    <ol class="facts">${a.bestMatch.slice(0, few).map((x) => `<li><b class="num">${fmtAvg(x.avg)}</b><span>${name(x.teamId)} <em>v ${vsOf(x.fixture, x.teamId)} · ${esc(stageName(x.fixture, { short: true }))}</em></span></li>`).join('')}</ol>
+    ${a.improved.length ? `<h3>On the up</h3><ol class="facts">${a.improved.slice(0, few).map((x) => `<li><b class="num up">+${x.change.toFixed(1)}</b><span>${name(x.teamId)} <em>last 3: ${fmtAvg(x.recent)} · before: ${fmtAvg(x.earlier)}</em></span></li>`).join('')}</ol>` : ''}`;
   const up = r.upset;
   const recPanel = `
     <ol class="facts big">
@@ -580,6 +616,19 @@ function championView(s) {
 function updateClock() {
   const el = $('#clock');
   if (el) el.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const eta = $('#eta');
+  const s = store.get();
+  if (eta && s) eta.innerHTML = etaText(s);
+}
+
+/** "Est. finish ~10:45 PM · 1h 40m to go" (rounded up to 5 minutes), or nothing. */
+function etaText(s) {
+  const e = I.finishEstimate(s);
+  if (!e) return '';
+  const mins = Math.ceil(e.ms / 300000) * 5;
+  const left = mins <= 5 ? 'nearly done' : mins < 60 ? `${mins}m to go` : `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''} to go`;
+  const at = new Date(Math.ceil(e.finishAt / 300000) * 300000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `Est. finish <b>~${esc(at)}</b> · ${esc(left)}`;
 }
 setInterval(updateClock, 10000);
 
@@ -718,7 +767,14 @@ function updateLink() {
   const quiet = Date.now() - adminSeenAt > 10000 && performance.now() > 10000;
   badge.hidden = !quiet;
 }
-const beat = () => store.post({ type: 'tv-beat', at: Date.now(), preview: PREVIEW, version: APP_VERSION });
+// Also tells the admin page what's on screen, so Settings can say whether the TV is rotating.
+const beat = () => {
+  const s = store.get();
+  store.post({
+    type: 'tv-beat', at: Date.now(), preview: PREVIEW, version: APP_VERSION,
+    view: currentView(s), rotate: rotateSeconds(s), screens: viewsFor(s).length, pinned: PINNED, urlRotate: URL_ROTATE,
+  });
+};
 
 /**
  * The admin page is running a newer release than this TV window (which may

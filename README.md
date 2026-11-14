@@ -118,6 +118,7 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
   - **Next up:** a free board's next match shows both teams' position, points and form, and how their last meeting went.
   - **Race for the semi-finals:** a green ✓ by a team that's sure of a top-4 place whatever happens; teams that can no longer make it are faded. This is cautious: a tie on points is never assumed to go a team's way. The full table also says *"Win 2 of 3 to be sure"* when a team is close.
   - **🔥 N** by a team on 3 or more wins in a row.
+  - **Estimated finish** (top right, under the progress bar): e.g. *Est. finish ~10:45 PM · 1h 40m to go*, for the whole night including the knockout. It's based on the pace of the evening (how often matches have been finishing lately, changeovers included), so it appears after 3 results and gets better as the night goes on. Results typed in all at once afterwards don't count as pace; then it uses the length of matches that were scored live (plus 3 minutes changeover), or shows nothing.
 - The league table's **Avg** column (TV and admin) is each team's mean over finished league matches with an average recorded.
 - Mistake? Press **Ctrl+Z** (or **↶ Undo**). The Fixtures tab still has the full list tools (add, paste, fixture check, balance boards).
 
@@ -195,7 +196,9 @@ These can't be tested automatically, so do them once on the actual equipment:
 
 ## 6. TV options
 
-**Rotating screens:** in admin **Settings → TV screens**, choose *Rotate … every 20 s* (or another interval). The TV starts cycling straight away, no address changes needed, and the setting is saved with the tournament. A scored leg or finished match always brings the TV back to the live screen for a full turn.
+**Rotating screens:** in admin **Settings → TV screens**, choose *Rotate … every 20 s* (or another interval). The TV starts cycling straight away, no address changes needed, and the setting is saved with the tournament. A scored leg or finished match always brings the TV back to the live screen for a full turn. The line under the setting says what the TV is doing right now (e.g. *✓ TV is rotating every 20 s · now showing the position chart*) or why it isn't rotating: before the league starts there's only the teams screen, so rotation begins once the league is under way. The admin **Preview TV** pane rotates too.
+
+**Live scores on every screen:** while a match is being played, every screen other than the live one (table, chart, head to head, stats, fixtures, bracket) has a scoreboard strip along the bottom: each board's teams, the leg score as it happens and what's at stake. A free board shows its next match.
 
 You can also add these to the TV address (they override the setting):
 

@@ -1162,8 +1162,9 @@ function viewSettings(s) {
       <label class="check"><input id="cfg-logo" type="checkbox" data-change="cfg-bool" data-field="showLogo" ${c.showLogo ? 'checked' : ''}> Show the JWI logo on the TV</label>
       <label>TV screens
         <select id="cfg-rotate" data-change="tv-rotate">
-          ${[...new Set([0, 10, 15, 20, 30, 45, 60, c.tvRotate])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === c.tvRotate ? 'selected' : ''}>${n ? `Rotate: table, chart, head to head, stats… every ${n} s` : 'Live screen only (no rotation)'}</option>`).join('')}
+          ${[...new Set([0, 10, 15, 20, 30, 45, 60, c.tvRotate])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === c.tvRotate ? 'selected' : ''}>${n ? `Rotate every ${n} s` : 'Off: live screen only'}</option>`).join('')}
         </select></label>
+      <p class="muted small-text" id="rotate-status">${esc(rotateStatusText())}</p>
       <label>Game (shown on TV)<input id="cfg-game" data-change="cfg" data-field="gameType" value="${esc(c.gameType)}" maxlength="40"></label>
       <div class="row2">
         <label>Board 1 name<input id="cfg-b1" data-change="board-name" data-idx="0" value="${esc(c.boardNames[0])}" maxlength="30"></label>
@@ -1653,8 +1654,25 @@ store.subscribe((_s, meta) => {
 // The TV window sends a heartbeat; show whether one is listening right now.
 let tvSeenAt = 0;
 let tvVersion = APP_VERSION;
-let adminOutdated = false;
 const tvConnected = () => Date.now() - tvSeenAt < 7000;
+let tvBeat = null; // last heartbeat from the TV window (what it is showing)
+const SCREEN_NAMES = { auto: 'the live screen', table: 'the league table', chart: 'the position chart', grid: 'head to head', stats: 'stats', fixtures: 'fixtures', bracket: 'the bracket' };
+/** One line under Settings → TV screens: is the TV actually rotating, and if not, why. */
+function rotateStatusText() {
+  const s = store.get();
+  const want = s?.config.tvRotate ?? 0;
+  const b = tvBeat;
+  if (!tvConnected() || !b) return want ? 'No TV window is open. Open it with 📺 Open TV window.' : 'The TV stays on the live screen.';
+  if (b.rotate === undefined) return 'The TV window is running an older version: click inside it and press F5 (Mac: Cmd+R) once.';
+  if (b.pinned) return `This TV window is fixed on one screen (?view=${b.pinned} in its address), so it doesn't rotate.`;
+  if (b.urlRotate !== null && b.urlRotate !== undefined && b.urlRotate !== want) return `This TV window has ?rotate=${b.urlRotate} in its address, which overrides this setting.`;
+  if (!b.rotate) return `TV showing ${SCREEN_NAMES[b.view] ?? b.view} (no rotation).`;
+  if (b.screens < 2) return s?.phase === 'setup'
+    ? 'Rotation starts when the league starts. Until then the TV only has the teams screen.'
+    : 'Nothing else to show yet: the other screens appear once there are results.';
+  return `✓ TV is rotating every ${b.rotate} s · now showing ${SCREEN_NAMES[b.view] ?? b.view}.`;
+}
+let adminOutdated = false;
 function renderTvStatus() {
   const el = $('#tv-status');
   const ok = tvConnected();
@@ -1662,6 +1680,8 @@ function renderTvStatus() {
   const stale = ok && tvVersion < APP_VERSION && tvVersion < 5;
   el.className = `tv-status ${ok && !stale ? 'ok' : 'off'}`;
   el.textContent = stale ? '📺 TV needs a refresh' : ok ? '📺 TV connected' : '📺 TV not connected';
+  const rs = $('#rotate-status');
+  if (rs) rs.textContent = rotateStatusText();
   el.title = stale
     ? 'The TV window is running an older version of the app. Click inside it and press F5 (Ctrl+R / Cmd+R) once.'
     : ok
@@ -1673,6 +1693,7 @@ store.onMessage((msg) => {
     const wasConnected = tvConnected();
     tvSeenAt = Date.now();
     tvVersion = Number(msg.version) || 0;
+    tvBeat = msg;
     if (!wasConnected) renderTvStatus();
   }
   // Another window runs a newer release than this admin page: ask for a reload.
