@@ -71,6 +71,14 @@ async function openPair({ state } = {}) {
   return { ctx, admin, tv, errors };
 }
 
+/** Choose a team in a dropdown by name (options read "Name (Player & Player)"). */
+async function pickTeam(page, selector, name) {
+  await page.waitForSelector(`${selector} option:nth-child(2)`, { state: "attached" }); // the tab renders just after a dialog closes
+  const value = await page.$eval(selector, (el, n) => [...el.options].find((o) => o.text === n || o.text.startsWith(`${n} (`))?.value, name);
+  assert.ok(value, `${name} in ${selector}`);
+  await page.selectOption(selector, value);
+}
+
 const leagueState = (teams = 8, played = 0, extra = {}) => {
   let s = loadDemoTeams(T.createTournament(extra), teams);
   s = T.startLeague(s);
@@ -170,8 +178,10 @@ test('manual fixtures: start empty, add, paste, edit position', { skip }, async 
   await admin.click('text=Load demo teams');
   await admin.click('text=…or start with an empty fixture list');
   await admin.click('dialog button:has-text("Start league")');
-  await admin.selectOption('#af-home', { label: 'Double Trouble' });
-  await admin.selectOption('#af-away', { label: 'Oche Dear' });
+  await pickTeam(admin, '#af-home', 'Double Trouble');
+  await pickTeam(admin, '#af-away', 'Oche Dear');
+  // Dropdowns show who is in each team.
+  assert.match(await admin.textContent('#af-home'), /Double Trouble \(Sam Reid & Alex Moore\)/);
   await admin.click('form[data-form="add-fixture"] button');
   await admin.click('summary:has-text("Paste a fixture list")');
   await admin.fill('#bulk-fixtures', 'The Bullseyes v Treble Makers\nNobody v Oche Dear');
@@ -183,8 +193,9 @@ test('manual fixtures: start empty, add, paste, edit position', { skip }, async 
   await admin.click('dialog button:has-text("Save")');
   // The table re-renders just after the dialog closes.
   await admin.waitForFunction(() => /The Bullseyes/.test(document.querySelector('table.fixtures tbody tr')?.textContent ?? ''));
-  await admin.selectOption('#fx-team', { label: 'Oche Dear' });
+  await pickTeam(admin, '#fx-team', 'Oche Dear');
   assert.equal(await admin.locator('table.fixtures tbody tr').count(), 1);
+  assert.match(await admin.textContent('table.fixtures tbody tr'), /Robin Hart & Dee Walsh/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

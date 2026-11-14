@@ -64,6 +64,7 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 **Before people arrive**
 1. Open **admin.html** and check the **Settings** tab: title, venue, match length (first to …), points, once or twice. The JWI logo is shown on the TV by default (you can turn it off there).
 2. **Teams** tab: add teams one by one, or paste a list with one team per line (`Team name: Player A & Player B`).
+   - Add the player names: they're shown under the team name everywhere, so people can see who is in which team. This covers the fixtures, up next, results, table, bracket, live boards and team dropdowns, on both the TV and the admin page.
 3. Open the TV window and put it on the TV. It shows the logo and the registered teams. Check the admin page says **📺 TV connected**.
 4. Click **Generate fixtures & start league**, or **…start with an empty fixture list** to set every match yourself. After this, teams can be renamed but not added or removed.
 

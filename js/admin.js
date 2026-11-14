@@ -5,7 +5,7 @@ import { knockoutSeeding, bracketView, winnerOf } from './logic/bracket.js';
 import { legsToWinFor, bestOfFor, MIN_TEAMS, MAX_TEAMS } from './logic/config.js';
 import { loadDemoTeams, simulateStep, simulateMatch, simulateUntil } from './logic/simulate.js';
 import {
-  esc, stageName, slotName, playersText, formatLine, legsFormat, phaseLabel, timeAgo, applyTheme, registerServiceWorker,
+  esc, stageName, slotName, playersText, teamText, teamBlock, slotBlock, formatLine, legsFormat, phaseLabel, timeAgo, applyTheme, registerServiceWorker,
 } from './view.js';
 
 const LONG_NAME = 24; // longer team names get shortened with … on parts of the TV
@@ -201,7 +201,7 @@ async function promptFinish(id) {
   const winner = slotName(s, f, f.homeLegs > f.awayLegs ? 'home' : 'away');
   const v = await ask({
     title: `${s.config.boardNames[f.board - 1]}: ${winner} win!`,
-    body: `<p class="dlg-score"><strong>${esc(slotName(s, f, 'home'))}</strong> <span class="num">${f.homeLegs} – ${f.awayLegs}</span> <strong>${esc(slotName(s, f, 'away'))}</strong></p>
+    body: `<p class="dlg-score"><strong>${slotBlock(s, f, 'home', { cls: 'end' })}</strong> <span class="num">${f.homeLegs} – ${f.awayLegs}</span> <strong>${slotBlock(s, f, 'away')}</strong></p>
            <p class="muted">Finish the match and record the result? <kbd>Enter</kbd> finishes, <kbd>Esc</kbd> keeps it open.</p>`,
     buttons: [
       { label: 'Undo last leg', value: 'undo' },
@@ -368,7 +368,7 @@ function phaseCallToAction(s) {
   }
   if (s.phase === 'complete') {
     const v = bracketView(s.fixtures);
-    return `<div class="cta card champion"><div>🏆 <strong>${esc(T.teamName(s, v.championId))}</strong> are the champions. The TV shows the champion screen.</div>
+    return `<div class="cta card champion"><div>🏆 <strong>${esc(teamText(s, v.championId))}</strong> are the champions. The TV shows the champion screen.</div>
       <button data-action="export">Download final backup</button></div>`;
   }
   return '';
@@ -409,7 +409,7 @@ function boardPanel(s, board, suggested) {
   let inner;
   if (suggested) {
     inner = `<p class="muted">Next up</p>
-      <div class="next-teams"><span>${esc(slotName(s, suggested, 'home'))}</span><em>v</em><span>${esc(slotName(s, suggested, 'away'))}</span></div>
+      <div class="next-teams">${slotBlock(s, suggested, 'home', { cls: 'end' })}<em>v</em>${slotBlock(s, suggested, 'away')}</div>
       <p class="muted small-text">${esc(stageName(suggested))} · ${esc(formatLine(s, suggested))}</p>
       <button class="primary big" data-action="start" data-id="${suggested.id}" data-board="${board}">▶ Start on ${name}</button>`;
   } else {
@@ -419,7 +419,7 @@ function boardPanel(s, board, suggested) {
     ? `<label class="picker">Or start another match:
         <select id="pick-${board}" data-change="start-pick" data-board="${board}">
           <option value="">Choose…</option>
-          ${options.map((x) => `<option value="${x.id}">${esc(stageName(x, { short: true }))} — ${esc(slotName(s, x, 'home'))} v ${esc(slotName(s, x, 'away'))}</option>`).join('')}
+          ${options.map((x) => `<option value="${x.id}">${esc(stageName(x, { short: true }))} — ${esc(teamText(s, x.homeId, slotName(s, x, 'home')))} v ${esc(teamText(s, x.awayId, slotName(s, x, 'away')))}</option>`).join('')}
         </select></label>`
     : '';
   return `<article class="board free"><header><h2>${name}</h2><span class="tag">Free</span></header>
@@ -459,7 +459,7 @@ function queueList(s, next) {
     const m = marks.get(f.id);
     return `<li>
       <span class="q-stage">${esc(stageName(f, { short: true }))}</span>
-      <span class="q-teams">${esc(slotName(s, f, 'home'))} <em>v</em> ${esc(slotName(s, f, 'away'))}</span>
+      <span class="q-teams">${slotBlock(s, f, 'home')} <em>v</em> ${slotBlock(s, f, 'away')}</span>
       ${m ? `<span class="tag" title="${T.liveOnBoard(s, m) ? 'Starts when this board is free' : 'Ready to start now'}">${T.liveOnBoard(s, m) ? 'after' : '→'} ${esc(s.config.boardNames[m - 1])}</span>` : ''}
       <span class="q-actions">
         ${[1, 2].map((b) => canStartOn(s, f, b) ? `<button class="small" data-action="start" data-id="${f.id}" data-board="${b}" title="Start on ${esc(s.config.boardNames[b - 1])}">▶ B${b}</button>` : '').join('')}
@@ -527,9 +527,9 @@ function fixtureRow(s, f) {
   return `<tr class="${f.status}">
     <td class="num muted">${f.order}</td>
     <td>${esc(stageName(f, { short: f.stage === 'league' }))}${f.stage === 'league' && f.round ? `<span class="muted small-text"> · R${f.round}</span>` : ''}</td>
-    <td class="r ${w && w === f.homeId ? 'win' : ''}">${esc(slotName(s, f, 'home'))}</td>
+    <td class="r ${w && w === f.homeId ? 'win' : ''}">${slotBlock(s, f, 'home')}</td>
     <td class="c">${score}</td>
-    <td class="${w && w === f.awayId ? 'win' : ''}">${esc(slotName(s, f, 'away'))}</td>
+    <td class="${w && w === f.awayId ? 'win' : ''}">${slotBlock(s, f, 'away')}</td>
     <td>${status}</td>
     <td class="r actions">${actions}</td>
   </tr>`;
@@ -537,16 +537,16 @@ function fixtureRow(s, f) {
 
 function teamOptions(s, selected = '', placeholder = 'Choose team…') {
   return `<option value="">${esc(placeholder)}</option>${s.teams
-    .map((t) => `<option value="${t.id}" ${t.id === selected ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}`;
+    .map((t) => `<option value="${t.id}" ${t.id === selected ? 'selected' : ''}>${esc(teamText(s, t.id))}</option>`).join('')}`;
 }
 
 /** Add / paste / check league fixtures (league phase). */
 function fixtureEditor(s) {
   const b = T.leagueBalance(s);
-  const name = (id) => esc(T.teamName(s, id));
+  const name = (id) => esc(teamText(s, id));
   const pair = (p) => `${name(p.a)} v ${name(p.b)}${p.expected > 1 || p.count > 1 ? ` <span class="muted">(${p.count}/${p.expected})</span>` : ''}`;
   const list = (items, max = 12) => `${items.slice(0, max).map(pair).join(' · ')}${items.length > max ? ` · <span class="muted">+${items.length - max} more</span>` : ''}`;
-  const perTeam = s.teams.map((t) => `<span class="chip">${esc(t.name)} <b class="num">${b.perTeam.get(t.id) ?? 0}</b></span>`).join('');
+  const perTeam = s.teams.map((t) => `<span class="chip">${teamBlock(s, t.id, { inline: true })} <b class="num">${b.perTeam.get(t.id) ?? 0}</b></span>`).join('');
   const once = s.config.doubleRoundRobin ? 'twice' : 'once';
   let status;
   if (!s.fixtures.some((f) => f.stage === 'league')) {
@@ -629,9 +629,9 @@ async function editResultDialog(id) {
   const v = await ask({
     title: `Edit result · ${stageName(f)}`,
     body: `<div class="edit-score">
-      <label>${esc(slotName(s, f, 'home'))}<select name="home" class="num">${opts(f.homeLegs)}</select></label>
+      <label>${slotBlock(s, f, 'home')}<select name="home" class="num">${opts(f.homeLegs)}</select></label>
       <span>–</span>
-      <label>${esc(slotName(s, f, 'away'))}<select name="away" class="num">${opts(f.awayLegs)}</select></label>
+      <label>${slotBlock(s, f, 'away')}<select name="away" class="num">${opts(f.awayLegs)}</select></label>
     </div><p class="muted">${legsFormat(bestOfFor(s.config, f.stage), { capital: true })}: the winner needs exactly ${need} leg${need === 1 ? '' : 's'}. The table updates instantly.</p>`,
     buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Save result', value: 'save', kind: 'primary', autofocus: true }],
     onSubmit(form) {
@@ -661,7 +661,7 @@ function standingsTable(s, { compact = false } = {}) {
       ${compact ? '' : '<th class="r">LF</th><th class="r">LA</th>'}<th class="r">LD</th><th class="r">Pts</th>${compact ? '' : '<th>Form</th>'}</tr></thead>
     <tbody>${rows.map((r, i) => `<tr class="${i < q ? 'q' : ''} ${i === q - 1 ? 'cut' : ''}">
       <td class="num">${r.position}${r.tiedWithPrev ? '<span class="tie" title="Level on every tiebreaker — separated by name only">=</span>' : ''}</td>
-      <td>${esc(r.name)}${live.has(r.teamId) ? ' <span class="dot-live" title="Playing now"></span>' : ''}</td>
+      <td class="team-cell">${teamBlock(s, r.teamId, { inline: compact })}${live.has(r.teamId) ? ' <span class="dot-live" title="Playing now"></span>' : ''}</td>
       <td class="r num">${r.played}</td><td class="r num">${r.won}</td><td class="r num">${r.lost}</td>
       ${compact ? '' : `<td class="r num">${r.legsFor}</td><td class="r num">${r.legsAgainst}</td>`}
       <td class="r num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td><td class="r num strong">${r.points}</td>
@@ -703,7 +703,7 @@ function bracketSummary(s) {
     const line = (side) => {
       const id = side === 'home' ? f.homeId : f.awayId;
       const legs = side === 'home' ? f.homeLegs : f.awayLegs;
-      return `<div class="b-team ${w && w === id ? 'win' : ''}"><span>${esc(slotName(s, f, side))}</span><span class="num">${f.status === 'scheduled' ? '' : legs}</span></div>`;
+      return `<div class="b-team ${w && w === id ? 'win' : ''}">${slotBlock(s, f, side)}<span class="num">${f.status === 'scheduled' ? '' : legs}</span></div>`;
     };
     return `<div class="b-match ${f.status}"><div class="b-title">${esc(stageName(f))}${f.status === 'live' ? ' <span class="tag live-tag">LIVE</span>' : ''}</div>${line('home')}${line('away')}</div>`;
   };
@@ -711,7 +711,7 @@ function bracketSummary(s) {
     <div class="col">${box(v.semis[0])}${box(v.semis[1])}</div>
     <div class="col">${box(v.final)}${box(v.third)}</div>
   </div>
-  ${v.championId ? `<p class="champ-line">🏆 Champions: <strong>${esc(T.teamName(s, v.championId))}</strong></p>` : ''}`;
+  ${v.championId ? `<p class="champ-line">🏆 Champions: <strong>${esc(teamText(s, v.championId))}</strong></p>` : ''}`;
 }
 
 async function knockoutPreview() {
@@ -724,10 +724,10 @@ async function knockoutPreview() {
     toast('Finish (or cancel) the live matches first.', 'error');
     return;
   }
-  const teamOpts = (sel) => rows.map((r) => `<option value="${r.teamId}" ${r.teamId === sel ? 'selected' : ''}>${r.position}. ${esc(r.name)} (${r.points} pts)</option>`).join('');
+  const teamOpts = (sel) => rows.map((r) => `<option value="${r.teamId}" ${r.teamId === sel ? 'selected' : ''}>${r.position}. ${esc(teamText(s, r.teamId))} — ${r.points} pts</option>`).join('');
   const seedSelect = (i) => `<label>Seed ${i + 1}<select name="seed${i}">${teamOpts(seeding.seeds[i])}</select></label>`;
   const tied = seeding.tie
-    ? `<p class="banner warn"><strong>Tie for the last place:</strong> ${seeding.tiedTeams.map((id) => esc(T.teamName(s, id))).join(', ')} are level on every tiebreaker. They are ordered by name below — change the seeds if you settle it another way (e.g. a nearest-the-bull throw-off).</p>`
+    ? `<p class="banner warn"><strong>Tie for the last place:</strong> ${seeding.tiedTeams.map((id) => esc(teamText(s, id))).join(', ')} are level on every tiebreaker. They are ordered by name below — change the seeds if you settle it another way (e.g. a nearest-the-bull throw-off).</p>`
     : '';
   const incomplete = remaining
     ? `<p class="banner error"><strong>${remaining} league match${remaining === 1 ? '' : 'es'} not played.</strong> Starting now drops them from the table for good.</p>`
@@ -744,7 +744,7 @@ async function knockoutPreview() {
     onOpen(form) {
       const update = () => {
         const ids = [0, 1, 2, 3].map((i) => form[`seed${i}`].value);
-        const n = (i) => esc(T.teamName(s, ids[i]));
+        const n = (i) => teamBlock(s, ids[i]);
         $('#seed-preview', form).innerHTML = `<div><span class="muted">Semi-final 1</span> ${n(0)} <em>v</em> ${n(3)}</div><div><span class="muted">Semi-final 2</span> ${n(1)} <em>v</em> ${n(2)}</div>`
           + (new Set(ids).size < 4 ? '<p class="error-text">Each seed must be a different team.</p>' : '');
       };
@@ -991,7 +991,7 @@ const actions = {
   'fixture-remove': (d) => {
     const f = T.fixtureById(S(), d.id);
     if (act(`Deleted ${stageName(f)}`, (s) => T.removeFixture(s, d.id))) {
-      toast(`Deleted ${T.teamName(S(), f.homeId)} v ${T.teamName(S(), f.awayId)}.`, 'info', { action: { label: 'Undo', fn: undo } });
+      toast(`Deleted ${teamText(S(), f.homeId)} v ${teamText(S(), f.awayId)}.`, 'info', { action: { label: 'Undo', fn: undo } });
     }
   },
   'fixtures-clear': async () => {

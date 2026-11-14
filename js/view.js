@@ -28,6 +28,32 @@ export function playersText(state, id) {
   return p.filter(Boolean).join(' & ');
 }
 
+/** Plain text for <option>s and messages: "Double Trouble (Sam Reid & Alex Moore)". */
+export function teamText(state, id, fallback = 'TBD') {
+  const name = teamById(state, id)?.name ?? fallback;
+  const players = playersText(state, id);
+  return players ? `${name} (${players})` : name;
+}
+
+/**
+ * Team name with its players, as HTML. Stacked (players on a smaller second
+ * line) by default; `inline: true` puts them after the name on one line.
+ */
+export function teamBlock(state, id, { fallback = 'TBD', inline = false, cls = '' } = {}) {
+  const name = id ? teamById(state, id)?.name ?? '?' : fallback;
+  const players = id ? playersText(state, id) : '';
+  return `<span class="who ${inline ? 'inline' : ''} ${cls}" title="${esc(players ? `${name}: ${players}` : name)}">`
+    + `<span class="who-name">${esc(name)}</span>`
+    + (players ? `<span class="who-players">${esc(players)}</span>` : '')
+    + '</span>';
+}
+
+/** teamBlock for one side of a fixture (handles "Winner SF1" placeholders). */
+export function slotBlock(state, f, side, opts = {}) {
+  const id = side === 'home' ? f.homeId : f.awayId;
+  return teamBlock(state, id, { ...opts, fallback: slotName(state, f, side) });
+}
+
 /** "First to 3 legs (best of 5)" — the way organisers talk about a match length. */
 export function legsFormat(bestOf, { capital = false, short = false } = {}) {
   const need = legsToWin(bestOf);

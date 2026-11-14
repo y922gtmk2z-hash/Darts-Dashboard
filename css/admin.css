@@ -341,3 +341,21 @@ button.primary:disabled { background: var(--panel-3); border-color: var(--line);
 fieldset.lengths { border: 1px solid var(--line); border-radius: 10px; padding: 0.4rem 0.8rem 0.1rem; margin: 0 0 0.75rem; }
 fieldset.lengths legend { font-size: 0.85rem; color: var(--muted); padding: 0 0.3rem; }
 fieldset.lengths label { margin-bottom: 0.6rem; }
+
+/* players under team names */
+.q-teams { display: flex; align-items: center; gap: 0.4rem; min-width: 0; flex-wrap: wrap; }
+.q-teams .who { max-width: 48%; }
+.next-teams .who { max-width: 48%; }
+.next-teams .who-name { white-space: normal; }
+.next-teams .who-players { font-size: 0.5em; white-space: normal; }
+.dlg-score { display: flex; align-items: center; justify-content: center; gap: 0.6rem; }
+.b-team { align-items: center; gap: 0.5rem; }
+.b-team .who { flex: 1; }
+.team-cell .who { max-width: calc(100% - 1.2rem); }
+.edit-score label .who { color: var(--text); font-size: 0.95rem; }
+.seed-preview .who { display: inline-flex; vertical-align: top; }
+.chip .who-players { color: var(--faint); }
+.fixtures td .who { max-width: 100%; }
+/* readable player names on the laptop screen */
+main .who-players { font-size: 0.8em; }
+.next-teams .who-players { font-size: 0.55em; }

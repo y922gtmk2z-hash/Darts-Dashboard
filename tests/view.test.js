@@ -28,3 +28,15 @@ test('match length reads as "first to N"', async () => {
   assert.equal(legsFormat(3), 'first to 2 legs (best of 3)');
   assert.equal(legsFormat(1, { capital: true }), 'Single leg');
 });
+
+test('team names come with their players', async () => {
+  const { teamText, teamBlock } = await import('../js/view.js');
+  const state = { teams: [{ id: 'a', name: 'Double <Trouble>', players: ['Sam', 'Alex'] }, { id: 'b', name: 'Solo', players: ['', ''] }] };
+  assert.equal(teamText(state, 'a'), 'Double <Trouble> (Sam & Alex)');
+  assert.equal(teamText(state, 'b'), 'Solo');
+  const html = teamBlock(state, 'a');
+  assert.match(html, /who-name">Double &lt;Trouble&gt;</);
+  assert.match(html, /who-players">Sam &amp; Alex</);
+  assert.doesNotMatch(teamBlock(state, 'b'), /who-players/);
+  assert.match(teamBlock(state, null, { fallback: 'Winner SF1' }), /Winner SF1/);
+});

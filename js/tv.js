@@ -4,7 +4,7 @@ import { createStore, createLocalStorageAdapter } from './store.js';
 import * as T from './logic/tournament.js';
 import { bracketView, winnerOf, knockoutSeeding } from './logic/bracket.js';
 import { legsToWinFor } from './logic/config.js';
-import { esc, stageName, slotName, playersText, formatLine, legsFormat, applyTheme, registerServiceWorker } from './view.js';
+import { esc, stageName, slotName, playersText, teamBlock, slotBlock, formatLine, legsFormat, applyTheme, registerServiceWorker } from './view.js';
 
 const W = 1920;
 const H = 1080;
@@ -216,7 +216,7 @@ function liveCard(s, board, suggested, ch) {
     return `<article class="live-card idle">
       <div class="lc-head"><span class="board-name">${name}</span><span class="pill">${suggested ? 'Next up' : 'Free'}</span></div>
       ${suggested
-        ? `<div class="lc-next"><span class="h">${esc(slotName(s, suggested, 'home'))}</span><em>v</em><span class="a">${esc(slotName(s, suggested, 'away'))}</span></div>
+        ? `<div class="lc-next">${slotBlock(s, suggested, 'home', { cls: 'h end' })}<em>v</em>${slotBlock(s, suggested, 'away', { cls: 'a' })}</div>
            <div class="lc-meta">${esc(stageName(suggested))} · get ready!</div>`
         : `<div class="lc-next muted-big">${s.phase === 'complete' ? 'All done' : 'No match'}</div>`}
     </article>`;
@@ -261,8 +261,8 @@ function leagueView(s, ch) {
   <section class="league-grid">
     <div class="panel table-panel">${panelTitle('League table', `<span class="hint">Top ${s.config.qualifiers} reach the semi-finals</span>`)}${tableHTML(s, ch.rows)}</div>
     <div class="side-col">
-      <div class="panel">${panelTitle('Up next')}${upNextHTML(s, 4)}</div>
-      <div class="panel">${panelTitle('Latest results')}${resultsHTML(s, 4, ch.fresh)}</div>
+      <div class="panel">${panelTitle('Up next')}${upNextHTML(s, 3)}</div>
+      <div class="panel">${panelTitle('Latest results')}${resultsHTML(s, 3, ch.fresh)}</div>
     </div>
   </section>`;
 }
@@ -281,7 +281,7 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
       const arrow = mv && mv.until > now ? `<span class="mv ${mv.dir}">${mv.dir === 'up' ? '▲' : '▼'}</span>` : '';
       return `<tr data-team-row="${r.teamId}" class="${i < q ? 'q' : ''} ${i === q - 1 && rows.length > q ? 'cut' : ''}">
         <td class="pos num">${r.position}</td>
-        <td class="team"><span class="nm">${esc(r.name)}</span>${live.has(r.teamId) ? '<span class="live-dot"></span>' : ''}${arrow}</td>
+        <td class="team">${teamBlock(s, r.teamId, { inline: rows.length > 10, cls: 'nm' })}${live.has(r.teamId) ? '<span class="live-dot"></span>' : ''}${arrow}</td>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.lost}</td>
         <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>
         <td class="pts num">${r.points}</td>
@@ -299,7 +299,7 @@ function upNextHTML(s, n) {
   return `<ol class="list">${q.map((f) => {
     const b = boardOf.get(f.id);
     return `<li><span class="tagc">${b ? esc(s.config.boardNames[b - 1]) : esc(stageName(f, { short: true }))}</span>
-      <span class="teams"><span>${esc(slotName(s, f, 'home'))}</span><em>v</em><span>${esc(slotName(s, f, 'away'))}</span></span></li>`;
+      <span class="teams">${slotBlock(s, f, 'home')}<em>v</em>${slotBlock(s, f, 'away')}</span></li>`;
   }).join('')}</ol>`;
 }
 
@@ -310,16 +310,16 @@ function resultsHTML(s, n, fresh = []) {
     const w = winnerOf(f);
     return `<li class="${fresh.includes(f.id) ? 'fresh' : ''}">
       <span class="tagc">${esc(stageName(f, { short: true }))}</span>
-      <span class="res"><span class="${w === f.homeId ? 'w' : 'l'}">${esc(slotName(s, f, 'home'))}</span>
+      <span class="res">${slotBlock(s, f, 'home', { cls: w === f.homeId ? 'w' : 'l' })}
       <b class="num">${f.homeLegs}–${f.awayLegs}</b>
-      <span class="${w === f.awayId ? 'w' : 'l'}">${esc(slotName(s, f, 'away'))}</span></span></li>`;
+      ${slotBlock(s, f, 'away', { cls: w === f.awayId ? 'w' : 'l' })}</span></li>`;
   }).join('')}</ol>`;
 }
 
 function fixturesView(s, ch) {
   return `<section class="fixtures-grid">
-    <div class="panel">${panelTitle('Up next')}${upNextHTML(s, 10)}</div>
-    <div class="panel">${panelTitle('Results')}${resultsHTML(s, 10, ch.fresh)}</div>
+    <div class="panel">${panelTitle('Up next')}${upNextHTML(s, 8)}</div>
+    <div class="panel">${panelTitle('Results')}${resultsHTML(s, 8, ch.fresh)}</div>
   </section>`;
 }
 
@@ -357,7 +357,7 @@ function bracketHTML(s, rows) {
       const id = which === 'home' ? f.homeId : f.awayId;
       const legs = which === 'home' ? f.homeLegs : f.awayLegs;
       const state = w ? (w === id ? 'win' : 'lose') : '';
-      return `<div class="bm-team ${state} ${id ? '' : 'tbd'}">${f.stage === 'semi' ? seedNo(id) : ''}<span class="nm">${esc(slotName(s, f, which))}</span>
+      return `<div class="bm-team ${state} ${id ? '' : 'tbd'}">${f.stage === 'semi' ? seedNo(id) : ''}${slotBlock(s, f, which, { cls: 'nm' })}
         <span class="lg num" ${f.status === 'live' ? `data-legs="${f.id}-${which}"` : ''}>${f.status === 'scheduled' ? '' : legs}</span></div>`;
     };
     const status = f.status === 'live' ? `<span class="pill live">● LIVE · ${esc(s.config.boardNames[f.board - 1])}</span>` : '';
@@ -393,8 +393,8 @@ function championView(s) {
     ${players ? `<p class="ch-players">${esc(players)}</p>` : ''}
     <p class="ch-final">beat <strong>${esc(T.teamName(s, v.runnerUpId))}</strong> <span class="num">${score}</span> in the final</p>
     <div class="ch-podium">
-      <div><span>Runners-up</span><strong>${esc(T.teamName(s, v.runnerUpId))}</strong></div>
-      ${v.thirdId ? `<div><span>Third place</span><strong>${esc(T.teamName(s, v.thirdId))}</strong></div>` : ''}
+      <div><span>Runners-up</span><strong>${esc(T.teamName(s, v.runnerUpId))}</strong>${playersText(s, v.runnerUpId) ? `<em>${esc(playersText(s, v.runnerUpId))}</em>` : ''}</div>
+      ${v.thirdId ? `<div><span>Third place</span><strong>${esc(T.teamName(s, v.thirdId))}</strong>${playersText(s, v.thirdId) ? `<em>${esc(playersText(s, v.thirdId))}</em>` : ''}</div>` : ''}
     </div>
   </section>`;
 }
