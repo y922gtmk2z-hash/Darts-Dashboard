@@ -1,6 +1,6 @@
 // Shared presentation helpers for the admin and TV pages (DOM-free strings).
 import { teamById } from './logic/tournament.js';
-import { legsToWinFor, bestOfFor } from './logic/config.js';
+import { bestOfFor, legsToWin } from './logic/config.js';
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
@@ -28,10 +28,15 @@ export function playersText(state, id) {
   return p.filter(Boolean).join(' & ');
 }
 
+/** "First to 3 legs (best of 5)" — the way organisers talk about a match length. */
+export function legsFormat(bestOf, { capital = false, short = false } = {}) {
+  const need = legsToWin(bestOf);
+  const first = `${capital ? 'F' : 'f'}irst to ${need}${short ? '' : need === 1 ? ' leg' : ' legs'}`;
+  return bestOf === 1 ? `${capital ? 'S' : 's'}ingle leg` : `${first} (best of ${bestOf})`;
+}
+
 export function formatLine(state, f) {
-  const bo = bestOfFor(state.config, f.stage);
-  const parts = [`Best of ${bo}`];
-  if (bo > 1) parts.push(`first to ${legsToWinFor(state.config, f.stage)}`);
+  const parts = [legsFormat(bestOfFor(state.config, f.stage), { capital: true })];
   if (state.config.gameType) parts.push(state.config.gameType);
   return parts.join(' · ');
 }

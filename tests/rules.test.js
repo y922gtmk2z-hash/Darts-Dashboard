@@ -59,3 +59,20 @@ test('validateState rejects inconsistent backups', () => {
   }
   assert.match(T.validateState(T.normalizeState({ phase: 'knockout', teams: [], fixtures: [] })).join(), /no semi-finals/);
 });
+
+test('league, semis and final can each be first to 3 or first to 5', () => {
+  let s = loadDemoTeams(T.createTournament(), 4);
+  s = T.updateConfig(s, { bestOf: { league: 5, semi: 9, final: 9 } });
+  assert.deepEqual([s.config.bestOf.league, s.config.bestOf.semi, s.config.bestOf.final], [5, 9, 9]);
+  s = T.startLeague(s);
+  const f = T.upcoming(s)[0];
+  s = T.startMatch(s, f.id, 1);
+  for (let i = 0; i < 2; i++) s = T.adjustLegs(s, f.id, 'home', 1);
+  assert.equal(T.matchIsDecided(s, f.id), false, '2 legs is not enough when first to 3');
+  s = T.adjustLegs(s, f.id, 'home', 1);
+  assert.equal(T.matchIsDecided(s, f.id), true);
+  s = simulateUntil(T.finishMatch(s, f.id), (x) => x.phase === 'complete', seededRandom(8));
+  const final = T.fixtureById(s, 'F');
+  assert.equal(Math.max(final.homeLegs, final.awayLegs), 5, 'final won with 5 legs');
+  for (const id of ['SF1', 'SF2']) assert.equal(Math.max(T.fixtureById(s, id).homeLegs, T.fixtureById(s, id).awayLegs), 5);
+});

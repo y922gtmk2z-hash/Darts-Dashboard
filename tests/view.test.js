@@ -20,3 +20,11 @@ test('timeAgo', () => {
   assert.equal(timeAgo(1000, 31000), '30s ago');
   assert.equal(timeAgo(1000, 1000 + 5 * 60000), '5 min ago');
 });
+
+test('match length reads as "first to N"', async () => {
+  const { legsFormat } = await import('../js/view.js');
+  assert.equal(legsFormat(5), 'first to 3 legs (best of 5)');
+  assert.equal(legsFormat(9, { capital: true }), 'First to 5 legs (best of 9)');
+  assert.equal(legsFormat(3), 'first to 2 legs (best of 3)');
+  assert.equal(legsFormat(1, { capital: true }), 'Single leg');
+});

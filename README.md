@@ -62,7 +62,7 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 ## 3. Running the night: cheat-sheet
 
 **Before people arrive**
-1. Open **admin.html** and check the **Settings** tab: title, venue, best-of, points, once or twice. The JWI logo is shown on the TV by default (you can turn it off there).
+1. Open **admin.html** and check the **Settings** tab: title, venue, match length (first to …), points, once or twice. The JWI logo is shown on the TV by default (you can turn it off there).
 2. **Teams** tab: add teams one by one, or paste a list with one team per line (`Team name: Player A & Player B`).
 3. Open the TV window and put it on the TV. It shows the logo and the registered teams. Check the admin page says **📺 TV connected**.
 4. Click **Generate fixtures & start league**, or **…start with an empty fixture list** to set every match yourself. After this, teams can be renamed but not added or removed.
@@ -178,13 +178,13 @@ The TV is designed for 1920×1080. On other screen shapes it scales down and add
 | --- | --- |
 | Teams | 4–16 (pairs, optional player names) |
 | League | Every team plays every other team **twice** (or once) |
-| Best of | League **3**, semi-finals **3**, final **3**, 3rd place **3** |
+| Match length | League, semi-finals, final and 3rd place each set separately: single leg, or **first to 2, 3, 4, 5 or 6 legs** (best of 3, 5, 7, 9, 11). Default first to 2 |
 | Points | Win **3**, loss **0** |
 | Knockout | Top 4: 1st v 4th, 2nd v 3rd, then the final. 3rd-place play-off off. The final is played on its own |
 | Branding | Title *James Watkins Invitational*, JWI logo on the TV (both changeable) |
 | Boards | 2 ("Board 1", "Board 2"; can be renamed) |
 
-Once/twice can only change before the league starts. A best-of value can change until the first match of that stage starts.
+Once/twice can only change before the league starts. Each match length can change until the first match of that stage starts. For example, set the league to *first to 3* and the semi-finals and final to *first to 5* in **Settings → Rules → Match length**.
 
 ---
 

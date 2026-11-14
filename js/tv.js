@@ -4,7 +4,7 @@ import { createStore, createLocalStorageAdapter } from './store.js';
 import * as T from './logic/tournament.js';
 import { bracketView, winnerOf, knockoutSeeding } from './logic/bracket.js';
 import { legsToWinFor } from './logic/config.js';
-import { esc, stageName, slotName, playersText, formatLine, applyTheme, registerServiceWorker } from './view.js';
+import { esc, stageName, slotName, playersText, formatLine, legsFormat, applyTheme, registerServiceWorker } from './view.js';
 
 const W = 1920;
 const H = 1080;
@@ -191,7 +191,7 @@ function setupView(s) {
       ${s.config.showLogo ? `<img class="hero-logo" src="img/logo.png" alt="${esc(s.config.title)}">` : '<div class="eyebrow">Doubles darts</div>'}
       ${logoSaysTitle(s) ? '' : `<h2 class="${s.config.showLogo ? 'with-logo' : ''}">${esc(s.config.title)}</h2>`}
       ${s.config.subtitle ? `<p class="sub">${esc(s.config.subtitle)}</p>` : ''}
-      <p class="rules">${s.config.doubleRoundRobin ? 'Everyone plays everyone twice' : 'Everyone plays everyone once'} · best of ${s.config.bestOf.league} legs · top 4 to the semi-finals</p>
+      <p class="rules">${s.config.doubleRoundRobin ? 'Everyone plays everyone twice' : 'Everyone plays everyone once'} · ${legsFormat(s.config.bestOf.league)} · top 4 to the semi-finals</p>
     </div>
     <div class="setup-teams">
       <h3>${n ? `${n} team${n === 1 ? '' : 's'} registered` : 'Teams to be announced'}</h3>

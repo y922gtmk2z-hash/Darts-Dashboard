@@ -5,7 +5,7 @@ import { knockoutSeeding, bracketView, winnerOf } from './logic/bracket.js';
 import { legsToWinFor, bestOfFor, MIN_TEAMS, MAX_TEAMS } from './logic/config.js';
 import { loadDemoTeams, simulateStep, simulateMatch, simulateUntil } from './logic/simulate.js';
 import {
-  esc, stageName, slotName, playersText, formatLine, phaseLabel, timeAgo, applyTheme, registerServiceWorker,
+  esc, stageName, slotName, playersText, formatLine, legsFormat, phaseLabel, timeAgo, applyTheme, registerServiceWorker,
 } from './view.js';
 
 const LONG_NAME = 24; // longer team names get shortened with … on parts of the TV
@@ -632,7 +632,7 @@ async function editResultDialog(id) {
       <label>${esc(slotName(s, f, 'home'))}<select name="home" class="num">${opts(f.homeLegs)}</select></label>
       <span>–</span>
       <label>${esc(slotName(s, f, 'away'))}<select name="away" class="num">${opts(f.awayLegs)}</select></label>
-    </div><p class="muted">Best of ${bestOfFor(s.config, f.stage)}: the winner needs exactly ${need} legs. The table updates instantly.</p>`,
+    </div><p class="muted">${legsFormat(bestOfFor(s.config, f.stage), { capital: true })}: the winner needs exactly ${need} leg${need === 1 ? '' : 's'}. The table updates instantly.</p>`,
     buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Save result', value: 'save', kind: 'primary', autofocus: true }],
     onSubmit(form) {
       try {
@@ -739,7 +739,7 @@ async function knockoutPreview() {
     body: `${incomplete}${tied}
       <div class="seeds">${[0, 1, 2, 3].map(seedSelect).join('')}</div>
       <div class="seed-preview" id="seed-preview"></div>
-      <p class="muted">Semi-finals best of ${s.config.bestOf.semi}, final best of ${s.config.bestOf.final}${s.config.thirdPlace ? `, 3rd place best of ${s.config.bestOf.third}` : ''}. You can cancel the knockout until its first match starts.</p>`,
+      <p class="muted">Semi-finals ${legsFormat(s.config.bestOf.semi)}, final ${legsFormat(s.config.bestOf.final)}${s.config.thirdPlace ? `, 3rd place ${legsFormat(s.config.bestOf.third)}` : ''}. You can cancel the knockout until its first match starts.</p>`,
     buttons: [{ label: 'Cancel', value: 'cancel' }, { label: remaining ? 'Start knockout anyway' : 'Start knockout', value: 'go', kind: remaining ? 'primary danger' : 'primary', autofocus: true }],
     onOpen(form) {
       const update = () => {
@@ -790,8 +790,8 @@ function viewTeams(s) {
   const startBlock = setup
     ? `<section class="card start-card">
         <h2>Ready?</h2>
-        <p><strong>${n}</strong> teams · play each other <strong>${s.config.doubleRoundRobin ? 'twice' : 'once'}</strong> · <strong>${n >= 2 ? matches : 0}</strong> league matches · best of ${s.config.bestOf.league}</p>
-        <p class="muted small-text">Change once/twice, best-of and points in <a href="#" data-action="tab" data-tab="settings">Settings</a>.</p>
+        <p><strong>${n}</strong> teams · play each other <strong>${s.config.doubleRoundRobin ? 'twice' : 'once'}</strong> · <strong>${n >= 2 ? matches : 0}</strong> league matches · ${legsFormat(s.config.bestOf.league)}</p>
+        <p class="muted small-text">Change once/twice, match length and points in <a href="#" data-action="tab" data-tab="settings">Settings</a>.</p>
         <button class="primary big" data-action="start-league" ${n < MIN_TEAMS ? 'disabled' : ''}>Generate fixtures &amp; start league</button>
         <p><button class="link" data-action="start-league-manual" ${n < MIN_TEAMS ? 'disabled' : ''}>…or start with an empty fixture list and set the matches yourself</button></p>
         <p class="muted small-text">Either way you can add, delete, edit and reorder matches on the Fixtures tab until they're played.</p>
@@ -832,7 +832,7 @@ function viewSettings(s) {
   const stagePlayed = (stage) => s.fixtures.some((f) => f.stage === stage && f.status !== 'scheduled');
   const boSelect = (stage, label) => `<label>${label}
     <select id="bo-${stage}" data-change="bestof" data-stage="${stage}" ${stagePlayed(stage) ? 'disabled title="Locked: a match has started"' : ''}>
-      ${[1, 3, 5, 7, 9, 11].map((n) => `<option value="${n}" ${n === c.bestOf[stage] ? 'selected' : ''}>Best of ${n}</option>`).join('')}
+      ${[1, 3, 5, 7, 9, 11].map((n) => `<option value="${n}" ${n === c.bestOf[stage] ? 'selected' : ''}>${legsFormat(n, { capital: true })}</option>`).join('')}
     </select></label>`;
   const keyInput = (k, label) => `<label>${label}<input id="key-${k}" class="key" data-change="key" data-key="${k}" value="${esc(c.keys[k].toUpperCase())}" maxlength="1"></label>`;
   return `<section class="settings-grid">
@@ -855,8 +855,9 @@ function viewSettings(s) {
           <option value="twice" ${c.doubleRoundRobin ? 'selected' : ''}>Twice</option>
           <option value="once" ${c.doubleRoundRobin ? '' : 'selected'}>Once</option>
         </select></label>
-      <div class="row2">${boSelect('league', 'League matches')}${boSelect('semi', 'Semi-finals')}</div>
-      <div class="row2">${boSelect('final', 'Final')}${boSelect('third', '3rd place play-off')}</div>
+      <fieldset class="lengths"><legend>Match length</legend>
+        ${boSelect('league', 'League matches')}${boSelect('semi', 'Semi-finals')}${boSelect('final', 'Final')}${boSelect('third', '3rd place play-off')}
+      </fieldset>
       <div class="row2">
         <label>Points for a win<input id="pts-win" type="number" min="0" max="99" data-change="points" data-which="win" value="${c.points.win}"></label>
         <label>Points for a loss<input id="pts-loss" type="number" min="0" max="99" data-change="points" data-which="loss" value="${c.points.loss}"></label>
@@ -1026,7 +1027,7 @@ const actions = {
     const s = S();
     const n = s.teams.length;
     const matches = (n * (n - 1)) / 2 * (s.config.doubleRoundRobin ? 2 : 1);
-    if (await confirmAction('Generate fixtures and start the league?', `${n} teams, each pair plays ${s.config.doubleRoundRobin ? 'twice' : 'once'}: <strong>${matches} matches</strong>, best of ${s.config.bestOf.league}. Teams can't be added or removed after this (names can still be edited).`, 'Start league')) {
+    if (await confirmAction('Generate fixtures and start the league?', `${n} teams, each pair plays ${s.config.doubleRoundRobin ? 'twice' : 'once'}: <strong>${matches} matches</strong>, ${legsFormat(s.config.bestOf.league)}. Teams can't be added or removed after this (names can still be edited).`, 'Start league')) {
       if (act('Started league', T.startLeague)) {
         tab = 'live';
         prefs.set('tab', tab);
@@ -1109,7 +1110,7 @@ const changes = {
     act('Renamed board', (s) => T.updateConfig(s, { boardNames: names }));
   },
   rr: (el) => act('Changed settings', (s) => T.updateConfig(s, { doubleRoundRobin: el.value === 'twice' })) || render(),
-  bestof: (el) => act('Changed best-of', (s) => T.updateConfig(s, { bestOf: { [el.dataset.stage]: Number(el.value) } })) || render(),
+  bestof: (el) => act('Changed match length', (s) => T.updateConfig(s, { bestOf: { [el.dataset.stage]: Number(el.value) } })) || render(),
   points: (el) => act('Changed points', (s) => T.updateConfig(s, { points: { [el.dataset.which]: Number(el.value) } })),
   key: (el) => {
     const v = el.value.trim().toLowerCase();

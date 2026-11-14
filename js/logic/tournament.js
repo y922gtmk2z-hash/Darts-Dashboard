@@ -321,7 +321,7 @@ export function updateConfig(state, patch) {
   for (const stage of STAGES) {
     if (merged.bestOf[stage] === state.config.bestOf[stage]) continue;
     if (state.fixtures.some((f) => f.stage === stage && f.status !== 'scheduled')) {
-      fail(`Best-of for ${stageLabel(stage)} matches cannot change after one has started.`);
+      fail(`The match length for ${stageLabel(stage)} matches cannot change after one has started.`);
     }
   }
   return mutate(state, (s) => {
