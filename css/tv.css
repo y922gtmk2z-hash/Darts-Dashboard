@@ -115,7 +115,7 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 }
 
 /* ---------- big league (more than 10 teams) ---------- */
-.league-tall { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; }
+.league-tall { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 28px; }
 .side-col.tall { display: flex; flex-direction: column; gap: 20px; }
 .side-col.tall > .panel { flex: none; padding-top: 14px; padding-bottom: 14px; }
 .live-row.stacked { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; height: auto; flex: 1; min-height: 0; gap: 20px; }
@@ -128,7 +128,7 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 .live-row.stacked .lc-meta { font-size: 18px; }
 
 /* ---------- league grid ---------- */
-.league-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 28px; }
+.league-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 28px; }
 .table-panel { display: flex; flex-direction: column; }
 .side-col { display: grid; grid-template-rows: 1fr 1fr; gap: 24px; min-height: 0; }
 
@@ -155,6 +155,12 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 .tv-table td.form i { display: inline-grid; place-items: center; width: 1.25em; height: 1.25em; margin-right: 6px; border-radius: 6px; font-style: normal; font-size: 0.7em; font-weight: 900; }
 .tv-table td.form i.W { background: color-mix(in srgb, var(--green) 55%, transparent); }
 .tv-table td.form i.L { background: color-mix(in srgb, var(--red) 45%, transparent); }
+.tv-table td.form i.D { background: rgba(255, 255, 255, 0.14); }
+/* The match being played now: outlined and pulsing, so it reads as provisional. */
+.tv-table td.form i.now { margin-left: 6px; box-shadow: 0 0 0 3px var(--red); animation: live 1.6s infinite; }
+.tv-table td.form .none { color: var(--faint); }
+.tv-table td.pos .tie { font-size: 0.7em; margin-left: 2px; }
+.tv-table tr.q td.pos .tie { color: inherit; }
 
 .list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .list li { min-width: 0; display: flex; align-items: center; gap: 18px; height: 50px; font-size: 28px; }
@@ -270,7 +276,8 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 .res .who.w .who-name { color: #fff; }
 .fixtures-grid .list li { height: auto; min-height: 76px; }
 .fixtures-grid .teams .who-players, .fixtures-grid .res .who-players { font-size: 22px; }
-.tv-table td.team .who { max-width: calc(100% - 70px); }
+.tv-table td.team .who { max-width: 100%; }
+.tv-table td.team:has(.mv) .who { max-width: calc(100% - 50px); }
 .tv-table td.team .who-players { font-size: 0.6em; color: var(--faint); font-weight: 500; margin-top: 0; }
 .tv-table td.team .who:not(.inline) { line-height: 1.05; }
 .lc-next .who { flex: 0 1 auto; min-width: 0; max-width: 46%; }
@@ -296,7 +303,16 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 .tv-table.with-avg th.team { width: auto; }
 .tv-table.with-avg th.avg-h { width: 112px; }
 .tv-table.with-avg th.pts { width: 84px; }
-.tv-table.with-avg th.form-h { width: 230px; }
+.tv-table.with-avg th.form-h { width: 250px; }
+.tv-table.compact th { width: 54px; }
+.tv-table.compact th.pos { width: 56px; }
+.tv-table.compact th.team { width: auto; }
+.tv-table.compact th.avg-h { width: 100px; }
+.tv-table.compact th.pts { width: 76px; }
+.tv-table.compact th.form-h { width: calc(var(--row-h) * 3.2 + 30px); padding-left: 16px; }
+.tv-table.compact td.form { padding-left: 16px; }
+.tv-table.compact td.form i { width: 1.1em; height: 1.1em; margin-right: 3px; font-size: 0.6em; border-radius: 5px; }
+.tv-table.compact td.form i.now { margin-left: 5px; }
 .tv-table.with-avg td { padding: 0 8px; }
 .tagc.b1 { color: #a9c8ff; }
 .tagc.b2 { color: #8fe3b6; }

@@ -297,6 +297,9 @@ test('league table is live: points, W/L and +/- move with matches still being pl
   }, away);
   // Both teams in the match are highlighted; nobody else is.
   assert.equal(await tv.locator('.tv-table tr.playing').count(), 2);
+  // Form on the main TV view: the match in progress is a provisional pip (W for the leader).
+  assert.equal(await tv.textContent(`.tv-table tr[data-team-row="${away}"] td.form i.now`), 'W');
+  assert.equal(await tv.locator('.tv-table td.form i.now').count(), 2);
   await admin.click('.tabs [data-tab="table"]');
   const top = await admin.textContent('table.standings tbody tr:first-child');
   assert.match(top, /\+1/);

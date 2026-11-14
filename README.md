@@ -111,6 +111,7 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 
 - **The league table is live ("as it stands").** Legs already won in matches being played count straight away. The team that's ahead gets a provisional win (played, W, points) and the team behind a provisional loss; while a match is level it adds legs only. If the lead changes, so does the table.
   - Teams in a match being played have their **whole row highlighted** with a red bar (admin also shows *LIVE · winning / losing / level*), so everyone can see those figures aren't final yet.
+  - The TV table always shows **Form**: the last 5 finished league matches (oldest → newest). A match being played is added on the right as a pulsing pip showing how it stands (W / L / – for level).
   - Knockout seeding always uses finished results only.
 - The league table's **Avg** column (TV and admin) is each team's mean over finished league matches with an average recorded.
 - Mistake? Press **Ctrl+Z** (or **↶ Undo**). The Fixtures tab still has the full list tools (add, paste, fixture check, balance boards).
@@ -194,7 +195,7 @@ Add these to the TV address:
 | URL | Shows |
 | --- | --- |
 | `index.html` | Automatic: the best layout for the current phase |
-| `index.html?view=table` | Only the full league table (with form) |
+| `index.html?view=table` | Only the full league table |
 | `index.html?view=fixtures` | Up next and results |
 | `index.html?view=bracket` | The knockout bracket (during the league: "if it ended now") |
 | `index.html?rotate=15` | Cycles through views every 15 seconds, jumping back to the live view when a score changes |

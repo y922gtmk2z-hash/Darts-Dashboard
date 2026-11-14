@@ -274,23 +274,34 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
   const avail = availOverride ?? (full ? 790 : 460);
   const rowH = Math.max(28, Math.min(full ? 72 : 60, Math.floor(avail / Math.max(rows.length, 1))));
   const now = Date.now();
-  const showForm = full;
-  const showAvg = true; // always shown ("–" until a team has a finished match with an average)
-  return `<table class="tv-table ${showAvg ? 'with-avg' : ''}" style="--row-h:${rowH}px">
-    <thead><tr><th class="pos">#</th><th class="team">Team</th><th>P</th><th>W</th><th>L</th><th>+/-</th>${showAvg ? '<th class="avg-h">Avg</th>' : ''}<th class="pts">Pts</th>${showForm ? '<th class="form-h">Form</th>' : ''}</tr></thead>
+  const anyLive = rows.some((r) => r.live);
+  return `<table class="tv-table with-avg ${full ? 'full' : 'compact'} ${anyLive ? 'any-live' : ''}" style="--row-h:${rowH}px">
+    <thead><tr><th class="pos">#</th><th class="team">Team</th><th>P</th><th>W</th><th>L</th><th>+/-</th><th class="avg-h">Avg</th><th class="pts">Pts</th><th class="form-h">Form</th></tr></thead>
     <tbody>${rows.map((r, i) => {
       const mv = movement.get(r.teamId);
       const arrow = mv && mv.until > now ? `<span class="mv ${mv.dir}">${mv.dir === 'up' ? '▲' : '▼'}</span>` : '';
       return `<tr data-team-row="${r.teamId}" class="${i < q ? 'q' : ''} ${i === q - 1 && rows.length > q ? 'cut' : ''} ${r.live ? 'playing' : ''}">
-        <td class="pos num">${r.position}</td>
-        <td class="team">${teamBlock(s, r.teamId, { inline: rows.length > 10, cls: 'nm' })}${r.live ? '<span class="live-dot"></span>' : ''}${arrow}</td>
+        <td class="pos num">${r.position}${r.tiedWithPrev ? '<span class="tie">=</span>' : ''}</td>
+        <td class="team">${teamBlock(s, r.teamId, { inline: rows.length > 10, cls: 'nm' })}${arrow}</td>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.lost}</td>
-        <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="num avg">${fmtAvg(r.avg) || '–'}</td>` : ''}
+        <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td><td class="num avg">${fmtAvg(r.avg) || '–'}</td>
         <td class="pts num">${r.points}</td>
-        ${showForm ? `<td class="form">${r.form.map((x) => `<i class="${x}">${x}</i>`).join('')}</td>` : ''}
+        <td class="form">${formHTML(r)}</td>
       </tr>`;
     }).join('')}</tbody>
   </table>`;
+}
+
+/**
+ * Last 5 finished league matches, oldest → newest. A match being played now
+ * is added on the right as a pulsing pip showing how it stands (W / L / –).
+ */
+function formHTML(r) {
+  const past = r.form.map((x) => `<i class="${x}">${x}</i>`).join('');
+  const live = r.live
+    ? `<i class="now ${r.liveResult === 'level' ? 'D' : r.liveResult}" title="Playing now">${r.liveResult === 'level' ? '–' : r.liveResult}</i>`
+    : '';
+  return past || live ? past + live : '<span class="none">–</span>';
 }
 
 function upNextHTML(s, n) {

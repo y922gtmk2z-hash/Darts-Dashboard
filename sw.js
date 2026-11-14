@@ -7,7 +7,7 @@
 //
 // VERSION must equal APP_VERSION in js/version.js (a test checks this).
 // Bump both on every release that changes behaviour.
-const VERSION = 'v12';
+const VERSION = 'v13';
 const CACHE = `darts-dashboard-${VERSION}`;
 const NETWORK_TIMEOUT_MS = 3500;
 const ASSETS = [
