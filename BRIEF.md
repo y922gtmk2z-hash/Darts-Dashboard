@@ -11,7 +11,7 @@ A static web app, hosted on **GitHub Pages**, that runs a **doubles darts tourna
 - **Boards:** 2 dartboards ("Board 1", "Board 2"). Two matches can run at once.
 - **League stage:** round robin — every team plays every other team once (option: twice).
 - **Match format:** best of N legs (default best of 3). Game type is cosmetic (default 501, double out).
-- **Points:** win = 2, loss = 0 (configurable; optional 3/1/0).
+- **Points:** win = 3, loss = 0 (configurable).
 - **Table order / tiebreakers:** points → leg difference → legs won → head-to-head → name (alphabetical). Keep this as a pure, tested function.
 - **Knockout:** top 4 qualify. Semi-finals 1st v 4th, 2nd v 3rd. Winners play the final. Optional 3rd-place playoff (default off). Knockout best-of defaults: semi best of 5, final best of 7 (configurable).
 - **Phases:** `setup → league → knockout → complete`.
@@ -92,6 +92,6 @@ Target: **1920×1080 landscape on a TV**, viewed from several metres away. Desig
 
 ## 11. Open details to fill in before you start
 - Tournament name / branding colours: ______
-- Number of teams: ______  Matches once or twice: ______
+- Number of teams: configurable in admin settings (4–16, default 8)  Matches once or twice: ______
 - Best-of legs in league: ______  Semi: ______  Final: ______
-- Points for a win: ______
+- Points for a win: 3 (loss: 0)
