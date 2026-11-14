@@ -249,6 +249,24 @@ function readAverages(form) {
   return out;
 }
 
+/** "Save result" on a match typed straight into the list (never started live). */
+function saveTypedResult(id) {
+  const val = (k) => $(`#d-${id}-${k}`)?.value.trim() ?? '';
+  const [h, a] = [val('homeLegs'), val('awayLegs')];
+  if (h === '' || a === '') {
+    toast('Type both teams’ legs first.', 'error');
+    $(`#d-${id}-${h === '' ? 'home' : 'away'}Legs`)?.focus();
+    return;
+  }
+  const f = T.fixtureById(S(), id);
+  if (!act(`Recorded ${stageName(f)}`, (s) => T.recordResult(s, id, Number(h), Number(a), { homeAvg: val('homeAvg'), awayAvg: val('awayAvg') }))) return;
+  drafts.delete(id);
+  const done = T.fixtureById(S(), id);
+  toast(`${T.teamName(S(), winnerOf(done))} win ${Math.max(done.homeLegs, done.awayLegs)}–${Math.min(done.homeLegs, done.awayLegs)}.`, 'success', { action: { label: 'Undo', fn: undo }, timeout: 6000 });
+  if (S().config.autoBackup) downloadBackup('after-match');
+  if (S().phase === 'complete') toast(`🏆 ${T.teamName(S(), winnerOf(T.fixtureById(S(), 'F')))} are the champions!`, 'success', { timeout: 10000 });
+}
+
 function finish(id, averages = null) {
   const s = S();
   const f = T.fixtureById(s, id);
@@ -312,7 +330,16 @@ function render() {
   const typing = focusSel && active.id && /^(INPUT|TEXTAREA)$/.test(active.tagName) && active.type !== 'checkbox' ? active.value : null;
 
   const views = { live: viewLive, fixtures: viewFixtures, table: viewTable, teams: viewTeams, settings: viewSettings, backup: viewBackup };
+  for (const id of drafts.keys()) if (T.fixtureById(s, id)?.status !== 'scheduled') drafts.delete(id);
+  for (const id of editing) if (T.fixtureById(s, id)?.status !== 'done') editing.delete(id);
   $('#main').innerHTML = (views[tab] ?? viewLive)(s);
+  if (tab === 'live' && !scrolledToCurrent) {
+    const current = $('#main .mcard.live') ?? $('#main .mcard.is-next') ?? $('#main .mcard.todo');
+    if (current) {
+      scrolledToCurrent = true;
+      requestAnimationFrame(() => current.scrollIntoView({ block: 'center' }));
+    }
+  }
 
   if (focusSel) {
     const el = $(focusSel, $('#main'));
@@ -328,7 +355,7 @@ function render() {
 
 function focusSelector(el) {
   if (el.id) return `#${CSS.escape(el.id)}`;
-  const keys = ['action', 'id', 'side', 'delta', 'board', 'boardView', 'scope', 'tab', 'filter', 'idx'];
+  const keys = ['action', 'id', 'side', 'delta', 'board', 'boardView', 'scope', 'tab', 'filter', 'idx', 'draft'];
   const parts = keys.filter((k) => el.dataset[k] !== undefined).map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`);
   return parts.length ? parts.join('') : null;
 }
@@ -364,7 +391,14 @@ function renderSaved() {
   el.title = store.lastSavedAt ? new Date(store.lastSavedAt).toLocaleString() : '';
 }
 
-// ---------------------------------------------------------------- view: live
+// ---------------------------------------------------------------- view: match day
+// Every fixture, Board 1 and Board 2 side by side (row k = the k-th match on
+// each board, which run at the same time). Scores and averages are entered
+// right in the list.
+
+const drafts = new Map(); // fixtureId -> { homeLegs, awayLegs, homeAvg, awayAvg } typed but not saved
+const editing = new Set(); // finished fixtures open for correction
+let scrolledToCurrent = false;
 
 function viewLive(s) {
   if (s.phase === 'setup') {
@@ -375,23 +409,162 @@ function viewLive(s) {
     </section>`;
   }
   const next = T.nextUp(s);
-  const cta = phaseCallToAction(s);
+  const league = s.fixtures.filter((f) => f.stage === 'league').sort(T.byOrder);
+  const boardOf = (f) => (f.status === 'live' ? f.board : f.plannedBoard);
+  const cols = [1, 2].map((b) => league.filter((f) => boardOf(f) === b));
+  const either = league.filter((f) => boardOf(f) == null);
+  const rows = Math.max(cols[0].length, cols[1].length);
+  const ko = s.fixtures.filter((f) => f.stage !== 'league').sort(T.byOrder);
+  const ctx = { next };
+  const { played, total } = T.leagueProgress(s);
+
+  const rowHtml = [];
+  for (let k = 0; k < rows; k++) {
+    const a = cols[0][k];
+    const b = cols[1][k];
+    const state = [a, b].some((f) => f?.status === 'live') ? 'live' : [a, b].every((f) => !f || f.status === 'done') ? 'done' : 'todo';
+    rowHtml.push(`<div class="md-row ${state}">
+      <div class="md-slot num" title="Time slot: these two matches run at the same time">${k + 1}</div>
+      ${a ? matchCard(s, a, ctx) : '<div class="mcard empty"></div>'}
+      ${b ? matchCard(s, b, ctx) : '<div class="mcard empty"></div>'}
+    </div>`);
+  }
+
   return `
-    ${cta}
-    <section class="boards">
-      ${[1, 2].map((b) => boardPanel(s, b, next[b], next.waiting?.[b])).join('')}
-    </section>
-    <p class="kbd-help">Keyboard: ${keyHelp(s)} · <kbd>Shift</kbd>+key removes a leg · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</p>
-    <section class="split">
-      <div class="card">
-        <h2>Up next</h2>
-        ${queueList(s, next)}
-      </div>
-      <div class="card">
-        <h2>${s.phase === 'league' ? 'League table' : 'Bracket'}</h2>
-        ${s.phase === 'league' ? standingsTable(s, { compact: true }) : bracketSummary(s)}
-      </div>
-    </section>`;
+    ${phaseCallToAction(s)}
+    <div class="md-head">
+      <div class="md-slot"></div>
+      ${[1, 2].map((b) => boardHeader(s, b, next)).join('')}
+    </div>
+    <p class="kbd-help">Type a score and averages into any match and press <strong>Save result</strong> — or press <strong>▶ Start</strong> to show it live on the TV and score leg by leg.
+      Keyboard for live matches: ${keyHelp(s)} · <kbd>Shift</kbd>+key removes a leg · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo
+      ${s.phase === 'league' ? ` · <span class="num">${played}/${total}</span> league matches played` : ''}</p>
+    ${league.length ? `<section class="md-list" aria-label="League fixtures by board">${rowHtml.join('')}</section>` : (s.phase === 'league' ? `<p class="muted card">${esc(idleMessage(s))}</p>` : '')}
+    ${either.length ? `<h2 class="md-section">Either board</h2><section class="md-grid">${either.map((f) => matchCard(s, f, ctx)).join('')}</section>` : ''}
+    ${ko.length ? `<h2 class="md-section">Knockout</h2><section class="md-grid">${ko.map((f) => matchCard(s, f, ctx)).join('')}</section>` : ''}`;
+}
+
+function boardHeader(s, b, next) {
+  const name = esc(s.config.boardNames[b - 1]);
+  const live = T.liveOnBoard(s, b);
+  let body;
+  if (live) {
+    body = `<span class="tag live-tag">LIVE</span> <a href="#" data-action="scroll-to" data-id="${live.id}">${esc(slotName(s, live, 'home'))} <span class="num">${live.homeLegs}–${live.awayLegs}</span> ${esc(slotName(s, live, 'away'))}</a>`;
+  } else if (next[b]) {
+    body = `<span class="tag">Free</span> <a href="#" data-action="scroll-to" data-id="${next[b].id}">Next: ${esc(slotName(s, next[b], 'home'))} v ${esc(slotName(s, next[b], 'away'))}</a>`;
+  } else if (next.waiting?.[b]) {
+    body = `<span class="tag">Free</span> <span class="muted">Waiting for the other board (2 on, 1 off)</span>`;
+  } else {
+    body = `<span class="tag">Free</span>`;
+  }
+  return `<div class="md-board b${b}"><h2>${name}</h2><div class="md-board-status">${body}</div></div>`;
+}
+
+function teamLine(s, f, side, inner) {
+  return `<div class="m-team ${side}">${slotBlock(s, f, side)}${inner}</div>`;
+}
+
+function avgInput(f, side, { id, value, change, extra = '' }) {
+  return `<label class="m-avg"><span>avg</span><input id="${id}" ${change} inputmode="decimal" autocomplete="off" placeholder="–"
+    value="${esc(value)}" aria-label="3-dart average" ${extra}></label>`;
+}
+
+function matchCard(s, f, { next }) {
+  const need = legsToWinFor(s.config, f.stage);
+  const head = (badge) => `<div class="m-head"><span class="m-label">${esc(stageName(f))}</span>${badge}${menuFor(s, f)}</div>`;
+  const w = winnerOf(f);
+
+  // ---- finished
+  if (f.status === 'done' && !editing.has(f.id)) {
+    const line = (side) => teamLine(s, f, side, `
+      <span class="m-legs num ${w === (side === 'home' ? f.homeId : f.awayId) ? 'win' : ''}">${side === 'home' ? f.homeLegs : f.awayLegs}</span>
+      <span class="m-avg-ro num" title="3-dart average">${fmtAvg(f[`${side}Avg`]) || '–'}</span>`);
+    return `<article class="mcard done" id="m-${f.id}">${head('<span class="tag done">Played</span>')}
+      ${line('home')}${line('away')}
+      <div class="m-actions"><button class="small" data-action="md-edit" data-id="${f.id}">Edit result</button></div></article>`;
+  }
+
+  // ---- finished, being corrected
+  if (f.status === 'done') {
+    const opts = (v) => Array.from({ length: need + 1 }, (_, i) => `<option ${i === v ? 'selected' : ''}>${i}</option>`).join('');
+    const line = (side) => teamLine(s, f, side, `
+      <select id="e-${f.id}-${side}Legs" class="m-legs-in num" aria-label="Legs">${opts(side === 'home' ? f.homeLegs : f.awayLegs)}</select>
+      ${avgInput(f, side, { id: `e-${f.id}-${side}Avg`, value: fmtAvg(f[`${side}Avg`]), change: '' })}`);
+    return `<article class="mcard editing" id="m-${f.id}">${head('<span class="tag">Editing</span>')}
+      ${line('home')}${line('away')}
+      <div class="m-actions"><button class="small ghost" data-action="md-edit-cancel" data-id="${f.id}">Cancel</button>
+        <button class="small primary" data-action="md-edit-save" data-id="${f.id}">Save</button></div></article>`;
+  }
+
+  // ---- live: leg by leg
+  if (f.status === 'live') {
+    const decided = T.matchIsDecided(s, f.id);
+    const k = s.config.keys;
+    const keys = f.board === 1 ? [k.b1Home, k.b1Away] : [k.b2Home, k.b2Away];
+    const line = (side, key) => {
+      const legs = side === 'home' ? f.homeLegs : f.awayLegs;
+      return teamLine(s, f, side, `
+        <span class="m-stepper">
+          <button class="minus" data-action="leg" data-id="${f.id}" data-side="${side}" data-delta="-1" ${legs === 0 ? 'disabled' : ''} aria-label="Remove a leg">−</button>
+          <span class="m-legs big num" data-legs="${f.id}-${side}">${legs}</span>
+          <button class="plus" data-action="leg" data-id="${f.id}" data-side="${side}" data-delta="1" ${decided ? 'disabled' : ''} aria-label="Add a leg">+ <kbd>${esc(key.toUpperCase())}</kbd></button>
+        </span>
+        ${avgInput(f, side, { id: `avg-${f.id}-${side}`, value: fmtAvg(f[`${side}Avg`]), change: `data-change="avg" data-id="${f.id}" data-side="${side}"` })}`);
+    };
+    return `<article class="mcard live ${decided ? 'decided' : ''}" id="m-${f.id}">
+      ${head(`<span class="tag live-tag">LIVE · ${esc(s.config.boardNames[f.board - 1])}</span>`)}
+      ${line('home', keys[0])}${line('away', keys[1])}
+      <div class="m-actions"><span class="muted small-text">${esc(legsFormat(bestOfFor(s.config, f.stage), { capital: true }))}</span>
+        <button class="small ghost" data-action="cancel" data-id="${f.id}" title="Take it off the board; the score is cleared">Cancel</button>
+        <button class="small primary" data-action="finish" data-id="${f.id}" ${decided ? '' : 'disabled'}>Finish match</button></div></article>`;
+  }
+
+  // ---- not played yet: type a result, or start it live
+  const d = drafts.get(f.id) ?? {};
+  const ready = f.homeId && f.awayId;
+  const nextOn = [1, 2].find((b) => next[b]?.id === f.id);
+  const waitingOn = [1, 2].find((b) => next.waiting?.[b]?.id === f.id);
+  const badge = nextOn ? `<span class="tag next-tag">Next on ${esc(s.config.boardNames[nextOn - 1])}</span>`
+    : waitingOn ? '<span class="tag">Next — waiting</span>' : '';
+  const line = (side) => teamLine(s, f, side, ready ? `
+    <input id="d-${f.id}-${side}Legs" class="m-legs-in num" type="number" min="0" max="${need}" inputmode="numeric" placeholder="–"
+      data-draft="${side}Legs" data-id="${f.id}" value="${esc(d[`${side}Legs`] ?? '')}" aria-label="Legs">
+    ${avgInput(f, side, { id: `d-${f.id}-${side}Avg`, value: d[`${side}Avg`] ?? '', change: `data-draft="${side}Avg" data-id="${f.id}"` })}` : '');
+  const boards = f.stage === 'league' && f.plannedBoard ? [f.plannedBoard] : [1, 2];
+  const startBtns = ready ? boards.filter((b) => canStartOn(s, f, b))
+    .map((b) => `<button class="small ${nextOn === b ? 'primary' : ''}" data-action="start" data-id="${f.id}" data-board="${b}">▶ Start on ${esc(s.config.boardNames[b - 1])}</button>`).join('') : '';
+  let why = '';
+  if (waitingOn) {
+    // "2 on, 1 off": this board's next match has a team still playing on the other board.
+    const live = T.liveFixtures(s).filter((x) => [x.homeId, x.awayId].some((t) => t === f.homeId || t === f.awayId));
+    const who = live.flatMap((x) => [x.homeId, x.awayId]).filter((t) => t === f.homeId || t === f.awayId).map((t) => T.teamName(s, t));
+    if (who.length) why = `<p class="waiting-why">Starts when <strong>${esc(who.join(' & '))}</strong> finish${who.length === 1 ? 'es' : ''} on ${esc(s.config.boardNames[(live[0].board ?? 1) - 1])} (2 on, 1 off).</p>`;
+  }
+  return `<article class="mcard todo ${nextOn || waitingOn ? 'is-next' : ''}" id="m-${f.id}">${head(badge)}
+    ${line('home')}${line('away')}${why}
+    ${ready ? `<div class="m-actions">${startBtns}<button class="small" data-action="md-save" data-id="${f.id}" title="Record this result without starting it live">Save result</button></div>`
+      : '<p class="muted small-text">Teams decided by earlier results.</p>'}
+  </article>`;
+}
+
+/** The ⋯ menu: everything you can do to one fixture. */
+function menuFor(s, f) {
+  const items = [];
+  if (f.status === 'scheduled' && f.homeId && f.awayId) {
+    items.push(`<button data-action="play-next" data-id="${f.id}" data-scope="board">Play next on this board</button>`);
+    items.push(`<button data-action="move" data-id="${f.id}" data-delta="-1" data-scope="board">Move earlier</button>`);
+    items.push(`<button data-action="move" data-id="${f.id}" data-delta="1" data-scope="board">Move later</button>`);
+  }
+  if (f.status === 'scheduled' && f.stage === 'league' && s.phase === 'league') {
+    const other = f.plannedBoard === 1 ? 2 : 1;
+    items.push(`<button data-action="md-board" data-id="${f.id}" data-board="${other}">Move to ${esc(s.config.boardNames[other - 1])}</button>`);
+    items.push(`<button data-action="fixture-swap" data-id="${f.id}">Swap home / away</button>`);
+    items.push(`<button data-action="fixture-edit" data-id="${f.id}">Change teams…</button>`);
+    items.push(`<button class="danger-text" data-action="fixture-remove" data-id="${f.id}">Delete match</button>`);
+  }
+  if (f.status === 'done') items.push(`<button class="danger-text" data-action="unplay" data-id="${f.id}">Un-play (back to the queue)</button>`);
+  if (!items.length) return '';
+  return `<details class="m-menu"><summary aria-label="More actions">⋯</summary><div class="m-menu-list">${items.join('')}</div></details>`;
 }
 
 function keyHelp(s) {
@@ -411,72 +584,6 @@ function phaseCallToAction(s) {
       <button data-action="export">Download final backup</button></div>`;
   }
   return '';
-}
-
-function boardPanel(s, board, suggested, waiting = null) {
-  const name = esc(s.config.boardNames[board - 1]);
-  const f = T.liveOnBoard(s, board);
-  const k = s.config.keys;
-  const keys = board === 1 ? [k.b1Home, k.b1Away] : [k.b2Home, k.b2Away];
-  if (f) {
-    const need = legsToWinFor(s.config, f.stage);
-    const decided = T.matchIsDecided(s, f.id);
-    const side = (which, key) => {
-      const legs = which === 'home' ? f.homeLegs : f.awayLegs;
-      const id = which === 'home' ? f.homeId : f.awayId;
-      const won = decided && legs === need;
-      return `<div class="side ${won ? 'winner' : ''}">
-        <div class="team-name">${esc(slotName(s, f, which))}</div>
-        <div class="players">${esc(playersText(s, id)) || '&nbsp;'}</div>
-        <div class="legs num" data-legs="${f.id}-${which}">${legs}</div>
-        <div class="pips">${Array.from({ length: need }, (_, i) => `<span class="${i < legs ? 'on' : ''}"></span>`).join('')}</div>
-        <label class="avg-live">3-dart avg
-          <input id="avg-${f.id}-${which}" data-change="avg" data-id="${f.id}" data-side="${which}" inputmode="decimal" autocomplete="off"
-            placeholder="–" value="${esc(fmtAvg(f[`${which}Avg`]))}" aria-label="3-dart average for ${esc(slotName(s, f, which))}"></label>
-        ${f.stage === 'league' ? '<span class="avg-note">Goes in the table when the match is finished</span>' : ''}
-        <div class="leg-btns">
-          <button class="minus" data-action="leg" data-id="${f.id}" data-side="${which}" data-delta="-1" ${legs === 0 ? 'disabled' : ''} aria-label="Remove a leg from ${esc(slotName(s, f, which))}">−</button>
-          <button class="plus" data-action="leg" data-id="${f.id}" data-side="${which}" data-delta="1" ${decided ? 'disabled' : ''} aria-label="Leg to ${esc(slotName(s, f, which))}">+ Leg <kbd>${esc(key.toUpperCase())}</kbd></button>
-        </div>
-      </div>`;
-    };
-    return `<article class="board live ${decided ? 'decided' : ''}">
-      <header><h2>${name}</h2><span class="tag live-tag">LIVE</span><span class="muted">${esc(stageName(f))}</span>
-        <button class="small ghost" data-action="cancel" data-id="${f.id}" title="Take this match off the board (score is cleared)">Cancel match</button></header>
-      <div class="score-row">${side('home', keys[0])}<div class="vs">v</div>${side('away', keys[1])}</div>
-      <footer><span class="muted">${esc(formatLine(s, f))}</span>
-        <button class="primary" data-action="finish" data-id="${f.id}" ${decided ? '' : 'disabled'}>Finish match</button></footer>
-    </article>`;
-  }
-  const options = T.upcoming(s).filter((x) => canStartOn(s, x, board));
-  let inner;
-  if (suggested) {
-    inner = `<p class="muted">Next up</p>
-      <div class="next-teams">${slotBlock(s, suggested, 'home', { cls: 'end' })}<em>v</em>${slotBlock(s, suggested, 'away')}</div>
-      <p class="muted small-text">${esc(stageName(suggested))} · ${esc(formatLine(s, suggested))}</p>
-      <button class="primary big" data-action="start" data-id="${suggested.id}" data-board="${board}">▶ Start on ${name}</button>`;
-  } else {
-    if (waiting) {
-      // "2 on, 1 off": the planned next match has a team still playing on the other board.
-      const busy = new Set(T.liveFixtures(s).flatMap((x) => [x.homeId, x.awayId]));
-      const who = [waiting.homeId, waiting.awayId].filter((t) => busy.has(t)).map((t) => T.teamName(s, t));
-      const other = T.liveFixtures(s).find((x) => [x.homeId, x.awayId].some((t) => busy.has(t) && (t === waiting.homeId || t === waiting.awayId)));
-      inner = `<p class="muted">Next up — waiting</p>
-        <div class="next-teams">${slotBlock(s, waiting, 'home', { cls: 'end' })}<em>v</em>${slotBlock(s, waiting, 'away')}</div>
-        <p class="waiting-why">Starts when <strong>${esc(who.join(' & '))}</strong> finish${who.length === 1 ? 'es' : ''} on ${esc(s.config.boardNames[(other?.board ?? 1) - 1])} (2 on, 1 off).</p>`;
-    } else {
-      inner = `<p class="muted waiting">${esc(idleMessage(s))}</p>`;
-    }
-  }
-  const picker = options.length > (suggested ? 1 : 0)
-    ? `<label class="picker">Or start another match:
-        <select id="pick-${board}" data-change="start-pick" data-board="${board}">
-          <option value="">Choose…</option>
-          ${options.map((x) => `<option value="${x.id}">${esc(stageName(x, { short: true }))} — ${esc(teamText(s, x.homeId, slotName(s, x, 'home')))} v ${esc(teamText(s, x.awayId, slotName(s, x, 'away')))}${x.plannedBoard && x.plannedBoard !== board ? ` (planned for ${esc(s.config.boardNames[x.plannedBoard - 1])})` : ''}</option>`).join('')}
-        </select></label>`
-    : '';
-  return `<article class="board free"><header><h2>${name}</h2><span class="tag">Free</span></header>
-    <div class="free-body">${inner}${picker}</div></article>`;
 }
 
 function canStartOn(s, f, board) {
@@ -499,26 +606,6 @@ function idleMessage(s) {
   }
   if (s.phase === 'complete') return 'Tournament complete.';
   return '';
-}
-
-function queueList(s, next) {
-  const q = T.upcoming(s);
-  if (!q.length) {
-    if (s.phase === 'knockout') return `<p class="muted">${esc(idleMessage(s))}</p>`;
-    return `<p class="muted">No matches waiting.</p>`;
-  }
-  const marks = new Map([[next[1]?.id, 1], [next[2]?.id, 2]]);
-  return `<ol class="queue">${q.slice(0, 8).map((f) => {
-    const m = marks.get(f.id);
-    return `<li>
-      <span class="q-stage">${esc(stageName(f, { short: true }))}${f.plannedBoard ? `<span class="board-chip b${f.plannedBoard}" title="Planned for ${esc(s.config.boardNames[f.plannedBoard - 1])}">B${f.plannedBoard}</span>` : ''}</span>
-      <span class="q-teams">${slotBlock(s, f, 'home')} <em>v</em> ${slotBlock(s, f, 'away')}</span>
-      ${m ? `<span class="tag" title="${T.liveOnBoard(s, m) ? 'Starts when this board is free' : 'Ready to start now'}">${T.liveOnBoard(s, m) ? 'after' : '→'} ${esc(s.config.boardNames[m - 1])}</span>` : ''}
-      <span class="q-actions">
-        ${[1, 2].map((b) => canStartOn(s, f, b) ? `<button class="small" data-action="start" data-id="${f.id}" data-board="${b}" title="Start on ${esc(s.config.boardNames[b - 1])}">▶ B${b}</button>` : '').join('')}
-      </span>
-    </li>`;
-  }).join('')}</ol>${q.length > 8 ? `<p class="muted small-text">+ ${q.length - 8} more · <a href="#" data-action="tab" data-tab="fixtures">all fixtures</a></p>` : ''}`;
 }
 
 // ---------------------------------------------------------------- view: fixtures
@@ -1096,10 +1183,46 @@ function stopAutoplay() {
 // ---------------------------------------------------------------- events
 
 const actions = {
-  tab: (d) => { tab = d.tab; prefs.set('tab', tab); render(); $('#main').focus({ preventScroll: true }); },
+  tab: (d) => { tab = d.tab; scrolledToCurrent = false; prefs.set('tab', tab); render(); $('#main').focus({ preventScroll: true }); },
   leg: (d) => changeLegs(d.id, d.side, Number(d.delta)),
   finish: (d) => finish(d.id),
-  start: (d) => act('Started match', (s) => T.startMatch(s, d.id, Number(d.board))),
+  start: (d) => {
+    // Anything already typed into the card comes along when it goes live.
+    const draft = drafts.get(d.id) ?? {};
+    const ok = act('Started match', (s) => {
+      let st = T.startMatch(s, d.id, Number(d.board));
+      for (const side of ['home', 'away']) {
+        const v = draft[`${side}Avg`];
+        if (v !== undefined && v !== '') st = T.setAverage(st, d.id, side, v);
+      }
+      const h = draft.homeLegs;
+      const a = draft.awayLegs;
+      if ((h ?? '') !== '' || (a ?? '') !== '') st = T.setLegs(st, d.id, h || 0, a || 0);
+      return st;
+    });
+    if (ok) {
+      drafts.delete(d.id);
+      if (T.matchIsDecided(S(), d.id)) promptFinish(d.id);
+    }
+  },
+  'md-save': (d) => saveTypedResult(d.id),
+  'md-edit': (d) => { editing.add(d.id); render(); $(`#e-${d.id}-homeLegs`)?.focus(); },
+  'md-edit-cancel': (d) => { editing.delete(d.id); render(); },
+  'md-edit-save': (d) => {
+    const val = (k) => $(`#e-${d.id}-${k}`)?.value ?? '';
+    const f = T.fixtureById(S(), d.id);
+    if (act(`Edited ${stageName(f)}`, (s) => {
+      let st = T.editResult(s, d.id, Number(val('homeLegs')), Number(val('awayLegs')));
+      st = T.setAverage(st, d.id, 'home', val('homeAvg'));
+      return T.setAverage(st, d.id, 'away', val('awayAvg'));
+    })) {
+      editing.delete(d.id);
+      render();
+      toast('Result updated.', 'success', { action: { label: 'Undo', fn: undo } });
+    }
+  },
+  'md-board': (d) => act('Moved to the other board', (s) => T.setFixtureBoard(s, d.id, Number(d.board))),
+  'scroll-to': (d) => document.getElementById(`m-${d.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
   cancel: async (d) => {
     if (await confirmAction('Cancel this match?', 'It goes back into the queue and the score is cleared.', 'Cancel match', 'danger')) {
       act('Cancelled match', (s) => T.cancelMatch(s, d.id));
@@ -1270,6 +1393,22 @@ const changes = {
   },
   import: (el) => { if (el.files[0]) importBackup(el.files[0]); el.value = ''; },
 };
+
+$('#main').addEventListener('input', (e) => {
+  const el = e.target.closest('[data-draft]');
+  if (!el) return;
+  const d = drafts.get(el.dataset.id) ?? {};
+  d[el.dataset.draft] = el.value;
+  drafts.set(el.dataset.id, d);
+});
+$('#main').addEventListener('keydown', (e) => {
+  // Enter in a typed result saves it.
+  const el = e.target.closest('[data-draft]');
+  if (el && e.key === 'Enter') {
+    e.preventDefault();
+    saveTypedResult(el.dataset.id);
+  }
+});
 
 $('#main').addEventListener('change', (e) => {
   const el = e.target.closest('[data-change]');

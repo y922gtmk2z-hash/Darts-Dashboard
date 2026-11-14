@@ -807,6 +807,50 @@ export function finishMatch(state, id) {
   });
 }
 
+/**
+ * Record a whole result in one go — for a match that is live, or one that was
+ * never started on the dashboard (scores typed straight into the fixture
+ * list). Averages are optional (number, text, or ''/null to leave blank).
+ */
+export function recordResult(state, id, homeLegs, awayLegs, { homeAvg, awayAvg } = {}) {
+  const f = getFixture(state, id);
+  if (f.status === 'done') fail('That match already has a result — use Edit to change it.');
+  if (!f.homeId || !f.awayId) fail('Both teams are not known yet.');
+  if (f.stage === 'league' && state.phase !== 'league') fail('The league is over.');
+  if (f.stage !== 'league' && state.phase !== 'knockout') fail('The knockout has not started.');
+  if (f.status === 'scheduled' && finalMustWait(state, f)) fail('The final is played on its own — finish the other matches first.');
+  const h = Number(homeLegs);
+  const a = Number(awayLegs);
+  if (!isDecided({ ...f, homeLegs: h, awayLegs: a }, state.config)) {
+    fail(`Not a valid result — the winner needs exactly ${legsToWinFor(state.config, f.stage)} legs.`);
+  }
+  let s = mutate(state, (st) => {
+    const m = getFixture(st, id);
+    if (m.status === 'scheduled') {
+      Object.assign(m, { status: 'live', board: m.plannedBoard ?? 1, startedAt: Date.now(), homeAvg: null, awayAvg: null });
+    }
+    m.homeLegs = h;
+    m.awayLegs = a;
+  });
+  if (homeAvg !== undefined) s = setAverage(s, id, 'home', homeAvg ?? '');
+  if (awayAvg !== undefined) s = setAverage(s, id, 'away', awayAvg ?? '');
+  return finishMatch(s, id);
+}
+
+/** Set a live match's legs directly (clamped to the winning count). */
+export function setLegs(state, id, homeLegs, awayLegs) {
+  return mutate(state, (s) => {
+    const f = getFixture(s, id);
+    if (f.status !== 'live') fail('That match is not live.');
+    const need = legsToWinFor(s.config, f.stage);
+    const h = Math.max(0, Math.min(need, Math.round(Number(homeLegs)) || 0));
+    const a = Math.max(0, Math.min(need, Math.round(Number(awayLegs)) || 0));
+    if (h === need && a === need) fail('Only one team can reach the winning number of legs.');
+    f.homeLegs = h;
+    f.awayLegs = a;
+  });
+}
+
 /** Correct a finished result. Standings / bracket recalculate from it. */
 export function editResult(state, id, homeLegs, awayLegs) {
   const f = getFixture(state, id);
