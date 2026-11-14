@@ -438,3 +438,11 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 .tv-eta { font-size: 21px; font-weight: 600; color: var(--muted); }
 .tv-eta:empty { display: none; }
 .tv-eta b { color: var(--text); font-weight: 800; }
+
+/* position chart: "Now" point from the live table (matches in progress) */
+.pos-chart .now-seg { stroke-dasharray: 10 8; }
+.pos-chart .now-line { stroke: color-mix(in srgb, var(--red) 55%, transparent); stroke-width: 2; stroke-dasharray: 4 6; }
+.pos-chart .axis.now { fill: var(--red); font-weight: 900; }
+.pos-chart .end.live { animation: live 1.6s infinite; }
+.pos-chart .live-mark { fill: var(--red); font-size: 0.8em; }
+.panel-title .now-key { color: var(--red); }

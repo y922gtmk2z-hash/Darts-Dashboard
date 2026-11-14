@@ -319,7 +319,7 @@ test('TV insights: stakes line, next-up preview and the chart / head-to-head / s
   for (const [view, sel] of [['chart', 'svg.pos-chart path.ln'], ['grid', 'table.h2h td i'], ['stats', '.stats-grid .bars li']]) {
     await tv.goto(`${base}/index.html?view=${view}`);
     await tv.waitForSelector(sel);
-    if (view === 'chart') assert.equal(await tv.locator('svg.pos-chart path.ln').count(), 8);
+    if (view === 'chart') assert.equal(await tv.locator('svg.pos-chart path.ln:not(.now-seg)').count(), 8);
     if (view === 'grid') assert.equal(await tv.locator('table.h2h tbody tr').count(), 8);
   }
   assert.deepEqual(errors, []);
@@ -367,6 +367,26 @@ test('live scores stay along the bottom of every other TV screen and update with
   await tv.waitForFunction((fid) => document.querySelector(`.live-strip [data-legs="${fid}-home"]`)?.textContent === '1', id);
   // The free board shows what's next.
   assert.match(await tv.textContent('.live-strip .ls-slot.idle'), /Next up|Free/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the race-for-the-top chart ends on a live "Now" point that moves with each leg', { skip }, async () => {
+  const base0 = leagueState(8, 20);
+  const { ctx, admin, tv, errors } = await openPair({ state: base0 });
+  await tv.goto(`${base}/index.html?view=chart`);
+  await tv.waitForSelector('svg.pos-chart');
+  assert.equal(await tv.locator('svg.pos-chart .axis.now').count(), 0); // nothing in play
+  // Start the next match and give the away team a leg: the chart gains "Now" and
+  // the label order matches the live table.
+  const f = T.nextUp(base0)[1];
+  await admin.click(`[data-action="start"][data-id="${f.id}"][data-board="1"]`);
+  await admin.keyboard.press('a');
+  await tv.waitForSelector('svg.pos-chart .axis.now');
+  const live = T.liveStandings(T.adjustLegs(T.startMatch(base0, f.id, 1), f.id, 'away', 1));
+  const labels = await tv.$$eval('svg.pos-chart text.lbl', (els) => els.map((e) => e.textContent.replace(/●/g, '').trim()));
+  assert.deepEqual(labels, live.map((r) => `${r.position}. ${r.name}`));
+  assert.equal(await tv.locator('svg.pos-chart .live-mark').count(), 2);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

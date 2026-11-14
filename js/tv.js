@@ -198,7 +198,7 @@ function viewBody(s, view, ch, strip) {
   switch (view) {
     case 'table': return `<section class="panel full">${panelTitle('League table')}${tableHTML(s, ch.rows, { full: true, avail: 790 - (strip ? STRIP_H : 0) })}</section>`;
     case 'fixtures': return fixturesView(s, ch);
-    case 'chart': return `<section class="panel full">${panelTitle('Race for the top', `<span class="hint">League position after each match · top ${s.config.qualifiers} highlighted</span>`)}${positionChartHTML(s)}</section>`;
+    case 'chart': return `<section class="panel full">${panelTitle('Race for the top', `<span class="hint">League position after each match${T.liveFixtures(s).some((f) => f.stage === 'league') ? ' · <span class="now-key">- - Now</span> = as it stands' : ''} · top ${s.config.qualifiers} highlighted</span>`)}${positionChartHTML(s)}</section>`;
     case 'grid': return `<section class="panel full">${panelTitle('Head to head', '<span class="hint">Read across: the row team’s score first</span>')}${gridHTML(s, ch.rows, strip ? STRIP_H : 0)}</section>`;
     case 'stats': return statsView(s, strip);
     case 'bracket': return `<section class="panel full">${panelTitle(s.phase === 'league' ? 'Knockout · if the league ended now' : 'Knockout')}${bracketHTML(s, ch.rows)}</section>`;
@@ -495,40 +495,64 @@ const CHART_COLORS = ['#3987e5', '#d95926', '#199e70', '#e66767'];
 
 function positionChartHTML(s) {
   const { fixtures, steps } = I.positionHistory(s);
-  if (steps.length < 2) return '<p class="empty">The chart appears after a couple of results.</p>';
+  // While league matches are being played, the line ends on a "Now" point: the
+  // live table as it stands (provisional), joined by a dashed segment.
+  const liveRows = T.liveStandings(s);
+  const playing = new Set(liveRows.filter((r) => r.live).map((r) => r.teamId));
+  const hasNow = s.phase === 'league' && playing.size > 0;
+  const now = new Map(liveRows.map((r) => [r.teamId, r.position]));
+  const pts = hasNow ? [...steps, now] : steps;
+  if (pts.length < 2) return '<p class="empty">The chart appears after a couple of results.</p>';
   const n = s.teams.length;
   const q = s.config.qualifiers;
   const VW = 1760;
   const VH = 800;
   const L = 70;
-  const R = 380;
+  const R = 400;
   const TOP = 24;
   const B = 64;
   const pw = VW - L - R;
   const ph = VH - TOP - B;
-  const x = (i) => L + (steps.length === 1 ? pw : (i / (steps.length - 1)) * pw);
+  // The "Now" point gets its own space after the last result, so live moves stand out.
+  const span = hasNow ? pw - 90 : pw;
+  const x = (i) => (i >= steps.length ? L + pw : L + (steps.length === 1 ? 0 : (i / (steps.length - 1)) * span));
   const y = (p) => TOP + (n === 1 ? 0 : ((p - 1) / (n - 1)) * ph);
-  const last = steps[steps.length - 1];
+  const last = pts[pts.length - 1];
   const order = [...last].sort((a, b) => a[1] - b[1]).map(([id]) => id);
-  const color = new Map(order.slice(0, q).map((id, i) => [id, CHART_COLORS[i]]));
+  // Colours follow the team, not the rank: fixed by the last finished results, so a
+  // live swing doesn't repaint lines. A team climbing into the top 4 live takes the
+  // colour of the team it pushed out.
+  const settled = steps.length ? [...steps[steps.length - 1]].sort((a, b) => a[1] - b[1]).map(([id]) => id) : order;
+  const base = new Map(settled.slice(0, q).map((id, i) => [id, CHART_COLORS[i]]));
+  const top = order.slice(0, q);
+  const spare = [...base].filter(([id]) => !top.includes(id)).map(([, c]) => c);
+  const color = new Map(top.map((id) => [id, base.get(id) ?? spare.shift()]));
   const path = (id) => steps.map((m, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(m.get(id)).toFixed(1)}`).join('');
+  const nowSeg = (id) => (hasNow && steps.length
+    ? `M${x(steps.length - 1).toFixed(1)},${y(steps[steps.length - 1].get(id)).toFixed(1)}L${x(pts.length - 1).toFixed(1)},${y(now.get(id)).toFixed(1)}`
+    : '');
   const grid = Array.from({ length: n }, (_, i) => `<line class="grid" x1="${L}" x2="${L + pw}" y1="${y(i + 1)}" y2="${y(i + 1)}"/>
     <text class="axis" x="${L - 18}" y="${y(i + 1)}" text-anchor="end" dominant-baseline="central">${i + 1}</text>`).join('');
   const cutY = n > q ? (y(q) + y(q + 1)) / 2 : null;
   const every = Math.max(1, Math.ceil(steps.length / 12));
   const ticks = steps.map((_, i) => i).filter((i) => (i + 1) % every === 0 || i === 0)
-    .map((i) => `<text class="axis" x="${x(i)}" y="${TOP + ph + 36}" text-anchor="middle">${i + 1}</text>`).join('');
-  const grey = order.slice(q).map((id) => `<path class="ln dim" d="${path(id)}"/>`).join('');
+    .filter((i) => !hasNow || x(pts.length - 1) - x(i) > 50) // keep clear of the "Now" label
+    .map((i) => `<text class="axis" x="${x(i)}" y="${TOP + ph + 36}" text-anchor="middle">${i + 1}</text>`).join('')
+    + (hasNow ? `<text class="axis now" x="${x(pts.length - 1)}" y="${TOP + ph + 36}" text-anchor="middle">Now</text>` : '');
+  const nowLine = hasNow ? `<line class="now-line" x1="${x(pts.length - 1)}" x2="${x(pts.length - 1)}" y1="${TOP - 10}" y2="${TOP + ph + 10}"/>` : '';
+  const grey = order.slice(q).map((id) => `<path class="ln dim" d="${path(id)}"/>${hasNow ? `<path class="ln dim now-seg" d="${nowSeg(id)}"/>` : ''}`).join('');
   const lit = order.slice(0, q).reverse().map((id) => `<path class="ln" d="${path(id)}" stroke="${color.get(id)}"/>
-    <circle cx="${x(steps.length - 1)}" cy="${y(last.get(id))}" r="8" fill="${color.get(id)}" class="end"/>`).join('');
+    ${hasNow ? `<path class="ln now-seg" d="${nowSeg(id)}" stroke="${color.get(id)}"/>` : ''}
+    <circle cx="${x(pts.length - 1)}" cy="${y(last.get(id))}" r="8" fill="${color.get(id)}" class="end ${playing.has(id) ? 'live' : ''}"/>`).join('');
   const labels = order.map((id) => {
     const p = last.get(id);
     const c = color.get(id);
-    return `<text class="lbl ${c ? '' : 'dim'}" x="${L + pw + 24}" y="${y(p)}" dominant-baseline="central">${p}. ${esc(T.teamName(s, id))}</text>`;
+    return `<text class="lbl ${c ? '' : 'dim'}" x="${L + pw + 24}" y="${y(p)}" dominant-baseline="central">${p}. ${esc(T.teamName(s, id))}${playing.has(id) ? '<tspan class="live-mark" dx="10">●</tspan>' : ''}</text>`;
   }).join('');
-  return `<svg class="pos-chart" viewBox="0 0 ${VW} ${VH}" role="img" aria-label="League position of each team after each of ${fixtures.length} matches">
+  return `<svg class="pos-chart" viewBox="0 0 ${VW} ${VH}" role="img" aria-label="League position of each team after each of ${fixtures.length} matches${hasNow ? ', and now with matches in progress' : ''}">
     ${grid}
     ${cutY ? `<line class="cut" x1="${L}" x2="${L + pw}" y1="${cutY}" y2="${cutY}"/>` : ''}
+    ${nowLine}
     ${ticks}<text class="axis title" x="${L + pw / 2}" y="${VH - 4}" text-anchor="middle">League matches played</text>
     ${grey}${lit}${labels}
   </svg>`;

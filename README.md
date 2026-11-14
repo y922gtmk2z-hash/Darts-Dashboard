@@ -206,7 +206,7 @@ You can also add these to the TV address (they override the setting):
 | --- | --- |
 | `index.html` | Automatic: the best layout for the current phase |
 | `index.html?view=table` | Only the full league table (with a *Semi-finals* column once anyone is through, out, or close) |
-| `index.html?view=chart` | Race for the top: every team's league position after each match, current top 4 highlighted |
+| `index.html?view=chart` | Race for the top: every team's league position after each match, current top 4 highlighted. While matches are being played the lines end on a dashed **Now** point: the live table as it stands (teams playing marked ●) |
 | `index.html?view=grid` | Head to head: every result between each pair of teams (row team's score first) |
 | `index.html?view=stats` | 3-dart averages (best average, best single match, on the up) and streaks & records |
 | `index.html?view=fixtures` | Up next and results |
