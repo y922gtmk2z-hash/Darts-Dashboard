@@ -1,0 +1,29 @@
+:root {
+  --bg: #0a0e16;
+  --panel: #131a27;
+  --panel-2: #1a2334;
+  --panel-3: #222d42;
+  --line: #2b3750;
+  --text: #f1f4fa;
+  --muted: #9ba8bf;
+  --faint: #6d7a92;
+  --accent: #ffc928;
+  --accent-ink: #1a1400;
+  --red: #ef4b4f;
+  --green: #2fc172;
+  --blue: #5b9bff;
+  --radius: 14px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+.num, .tabnum { font-variant-numeric: tabular-nums; }
+[hidden] { display: none !important; }

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0e16">
+  <title>Darts Admin</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AF%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <script type="module" src="js/admin.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">🎯</span>
+      <div>
+        <div class="brand-title" id="title">Darts</div>
+        <div class="brand-sub"><span id="phase" class="badge">Setup</span> <span id="progress"></span></div>
+      </div>
+    </div>
+    <div class="saved" id="saved" role="status" aria-live="polite"></div>
+    <div class="top-actions">
+      <button id="autoplay-stop" class="warn" hidden>■ Stop auto-play</button>
+      <button id="undo" title="Undo last change (Ctrl+Z)">↶ Undo</button>
+      <button id="open-tv" title="Open the TV dashboard in a new window">📺 Open TV window</button>
+      <button id="toggle-preview" aria-pressed="false">Preview TV</button>
+      <button id="export" title="Download a JSON backup">⬇ Backup</button>
+    </div>
+  </header>
+  <div id="banners"></div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="live">Live scoring</button>
+    <button role="tab" data-tab="fixtures">Fixtures</button>
+    <button role="tab" data-tab="table">Table &amp; knockout</button>
+    <button role="tab" data-tab="teams">Teams</button>
+    <button role="tab" data-tab="settings">Settings</button>
+    <button role="tab" data-tab="backup">Backup &amp; recovery</button>
+  </nav>
+  <main id="main" tabindex="-1"></main>
+  <aside id="preview" class="preview" hidden>
+    <div class="preview-bar">TV preview <button id="preview-close" aria-label="Close preview">✕</button></div>
+    <div class="preview-frame"></div>
+  </aside>
+  <dialog id="dialog"></dialog>
+  <div id="toasts" aria-live="polite"></div>
+</body>
+</html>
