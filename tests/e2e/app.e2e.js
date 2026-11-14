@@ -297,11 +297,31 @@ test('league table is live: points, W/L and +/- move with matches still being pl
   }, away);
   // Both teams in the match are highlighted; nobody else is.
   assert.equal(await tv.locator('.tv-table tr.playing').count(), 2);
+  // Form on the main TV view: the match in progress is a provisional pip (W for the leader).
+  assert.equal(await tv.textContent(`.tv-table tr[data-team-row="${away}"] td.form i.now`), 'W');
+  assert.equal(await tv.locator('.tv-table td.form i.now').count(), 2);
   await admin.click('.tabs [data-tab="table"]');
   const top = await admin.textContent('table.standings tbody tr:first-child');
   assert.match(top, /\+1/);
   assert.match(top, /LIVE · winning/);
   assert.equal(await admin.locator('table.standings tr.playing').count(), 2);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('TV insights: stakes line, next-up preview and the chart / head-to-head / stats screens', { skip }, async () => {
+  const s = T.startMatch(leagueState(8, 20), T.nextUp(leagueState(8, 20))[1].id, 1);
+  const { ctx, tv, errors } = await openPair({ state: s });
+  await tv.waitForSelector('.live-card .lc-meta.stakes');
+  assert.match(await tv.textContent('.live-card .lc-meta.stakes'), /At stake/);
+  // The free board previews the next match with positions and form.
+  await tv.waitForSelector('.live-card.idle .nx-stat');
+  for (const [view, sel] of [['chart', 'svg.pos-chart path.ln'], ['grid', 'table.h2h td i'], ['stats', '.stats-grid .bars li']]) {
+    await tv.goto(`${base}/index.html?view=${view}`);
+    await tv.waitForSelector(sel);
+    if (view === 'chart') assert.equal(await tv.locator('svg.pos-chart path.ln').count(), 8);
+    if (view === 'grid') assert.equal(await tv.locator('table.h2h tbody tr').count(), 8);
+  }
   assert.deepEqual(errors, []);
   await ctx.close();
 });
