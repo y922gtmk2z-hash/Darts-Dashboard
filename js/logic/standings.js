@@ -20,7 +20,8 @@ function emptyRow(team) {
     h2hLegDiff: 0,
     position: 0,
     tiedWithPrev: false, // true = only separated from the row above by name
-    live: false, // includes legs from a match still being played
+    live: false, // includes a match still being played (provisional)
+    liveResult: null, // 'W' | 'L' | 'level' — how that match stands right now
     liveLegDiff: 0, // the part of legDiff that comes from that match
   };
 }
@@ -28,9 +29,10 @@ function emptyRow(team) {
 const primary = (a, b) => b.points - a.points || b.legDiff - a.legDiff || b.legsFor - a.legsFor;
 
 /**
- * includeLive: legs already won in league matches still being played count
- * towards legs won / lost / leg difference straight away (points, played,
- * W/L only change when the match finishes). Gives a live "as it stands" table.
+ * includeLive: a live "as it stands" table. Legs already won in league
+ * matches still being played count straight away, and whoever is ahead in
+ * such a match is given a provisional win (played, W/L, points); a level
+ * match adds legs only. Rows involved are flagged `live`.
  *
  * Order: points -> leg difference -> legs won -> head-to-head -> name.
  * Head-to-head is a mini-league among the teams still level (points, then
@@ -74,11 +76,23 @@ export function computeStandings(teams, fixtures, config, { includeLive = false 
       const h = rows.get(f.homeId);
       const a = rows.get(f.awayId);
       if (!h || !a) continue;
+      // "As it stands": whoever is ahead gets a provisional win; level = legs only.
+      const leader = f.homeLegs > f.awayLegs ? h : f.awayLegs > f.homeLegs ? a : null;
       for (const [row, legsFor, legsAgainst] of [[h, f.homeLegs, f.awayLegs], [a, f.awayLegs, f.homeLegs]]) {
         row.legsFor += legsFor;
         row.legsAgainst += legsAgainst;
         row.live = true;
         row.liveLegDiff += legsFor - legsAgainst;
+        if (leader) {
+          const won = row === leader;
+          row.played++;
+          if (won) row.won++;
+          else row.lost++;
+          row.points += won ? win : loss;
+          row.liveResult = won ? 'W' : 'L';
+        } else {
+          row.liveResult = 'level';
+        }
       }
     }
   }

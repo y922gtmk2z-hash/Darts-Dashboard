@@ -856,17 +856,16 @@ async function editResultDialog(id) {
 function standingsTable(s, { compact = false } = {}) {
   const rows = T.liveStandings(s);
   const showAvg = true; // always shown, so it's clear where averages appear ("–" until recorded)
-  const live = new Set(T.liveFixtures(s).filter((f) => f.stage === 'league').flatMap((f) => [f.homeId, f.awayId]));
   const q = s.config.qualifiers;
   return `<table class="standings ${compact ? 'compact' : ''}">
     <thead><tr><th>#</th><th>Team</th><th class="r">P</th><th class="r">W</th><th class="r">L</th>
       ${compact ? '' : '<th class="r">LF</th><th class="r">LA</th>'}<th class="r">LD</th>${showAvg ? '<th class="r" title="Mean 3-dart average over league matches where it was recorded">Avg</th>' : ''}<th class="r">Pts</th>${compact ? '' : '<th>Form</th>'}</tr></thead>
-    <tbody>${rows.map((r, i) => `<tr class="${i < q ? 'q' : ''} ${i === q - 1 ? 'cut' : ''}">
+    <tbody>${rows.map((r, i) => `<tr class="${i < q ? 'q' : ''} ${i === q - 1 ? 'cut' : ''} ${r.live ? 'playing' : ''}">
       <td class="num">${r.position}${r.tiedWithPrev ? '<span class="tie" title="Level on every tiebreaker — separated by name only">=</span>' : ''}</td>
-      <td class="team-cell">${teamBlock(s, r.teamId, { inline: compact })}${live.has(r.teamId) ? ' <span class="dot-live" title="Playing now"></span>' : ''}</td>
+      <td class="team-cell">${teamBlock(s, r.teamId, { inline: compact })} ${r.live ? `<span class="live-badge ${r.liveResult === 'W' ? 'w' : r.liveResult === 'L' ? 'l' : ''}" title="Match in progress — these figures will change">LIVE${r.liveResult === 'W' ? ' · winning' : r.liveResult === 'L' ? ' · losing' : ' · level'}</span>` : ''}</td>
       <td class="r num">${r.played}</td><td class="r num">${r.won}</td><td class="r num">${r.lost}</td>
       ${compact ? '' : `<td class="r num">${r.legsFor}</td><td class="r num">${r.legsAgainst}</td>`}
-      <td class="r num ${r.live ? 'live-num' : ''}" ${r.live ? `title="Includes ${r.liveLegDiff > 0 ? '+' : ''}${r.liveLegDiff} from the match being played now"` : ''}>${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="r num avg-col">${fmtAvg(r.avg) || '–'}</td>` : ''}<td class="r num strong">${r.points}</td>
+      <td class="r num" ${r.live ? `title="Includes ${r.liveLegDiff > 0 ? '+' : ''}${r.liveLegDiff} from the match being played now"` : ''}>${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="r num avg-col">${fmtAvg(r.avg) || '–'}</td>` : ''}<td class="r num strong">${r.points}</td>
       ${compact ? '' : `<td class="form">${r.form.map((x) => `<span class="${x}">${x}</span>`).join('')}</td>`}
     </tr>`).join('')}</tbody></table>`;
 }

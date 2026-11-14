@@ -283,7 +283,7 @@ test('match day: Board 1 and Board 2 side by side; type a result and averages st
   await ctx.close();
 });
 
-test('league table is live: +/- moves with legs in matches still being played', { skip }, async () => {
+test('league table is live: points, W/L and +/- move with matches still being played; rows highlighted', { skip }, async () => {
   const s = T.startMatch(leagueState(8), 'L1', 1);
   const away = T.fixtureById(s, 'L1').awayId;
   const { ctx, admin, tv, errors } = await openPair({ state: s });
@@ -291,10 +291,17 @@ test('league table is live: +/- moves with legs in matches still being played', 
   await admin.keyboard.press('a'); // leg to the away team on Board 1
   await tv.waitForFunction((id) => {
     const row = document.querySelector(`.tv-table tr[data-team-row="${id}"]`);
-    return row && row.querySelector('td.live-num')?.textContent === '+1' && row === document.querySelector('.tv-table tbody tr');
+    if (!row || row !== document.querySelector('.tv-table tbody tr') || !row.classList.contains('playing')) return false;
+    const cells = [...row.querySelectorAll('td')].map((td) => td.textContent.trim());
+    return cells.includes('+1') && row.querySelector('td.pts').textContent === '3';
   }, away);
+  // Both teams in the match are highlighted; nobody else is.
+  assert.equal(await tv.locator('.tv-table tr.playing').count(), 2);
   await admin.click('.tabs [data-tab="table"]');
-  assert.match(await admin.textContent('table.standings tbody tr:first-child'), /\+1/);
+  const top = await admin.textContent('table.standings tbody tr:first-child');
+  assert.match(top, /\+1/);
+  assert.match(top, /LIVE · winning/);
+  assert.equal(await admin.locator('table.standings tr.playing').count(), 2);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

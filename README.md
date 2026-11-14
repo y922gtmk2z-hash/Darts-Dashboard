@@ -103,7 +103,9 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 - **Type a result straight in:** enter both teams' legs (and 3-dart averages if you have them) in a match's card, then press **Save result** or Enter. No need to start it first. Invalid scores (e.g. 1–1 in a first-to-2 match) are refused.
 - **Or score it live on the TV:** press **▶ Start on Board 1/2** in the card. The card then has big **+ / −** leg buttons (or use the keyboard) and **avg** boxes. When a team wins, a box pops up with both averages to confirm; press **Enter** to finish.
 - **Correct a result:** **Edit result** on a finished card changes the legs and averages in place. **⋯** on any card has *Play next on this board*, *Move earlier/later*, *Move to the other board*, *Swap home / away*, *Change teams…*, *Delete match* and *Un-play*.
-- **The league table is live.** Legs already won in matches being played count towards **+/-** (and legs won/lost) straight away, so the table re-orders as legs go in. These numbers are shown in red. Points, played and W/L only change when a match is finished. Knockout seeding always uses finished results.
+- **The league table is live ("as it stands").** Legs already won in matches being played count straight away. The team that's ahead gets a provisional win (played, W, points) and the team behind a provisional loss; while a match is level it adds legs only. If the lead changes, so does the table.
+  - Teams in a match being played have their **whole row highlighted** with a red bar (admin also shows *LIVE · winning / losing / level*), so everyone can see those figures aren't final yet.
+  - Knockout seeding always uses finished results only.
 - The league table's **Avg** column (TV and admin) is each team's mean over finished league matches with an average recorded.
 - Mistake? Press **Ctrl+Z** (or **↶ Undo**). The Fixtures tab still has the full list tools (add, paste, fixture check, balance boards).
 
