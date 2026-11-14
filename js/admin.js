@@ -1160,6 +1160,10 @@ function viewSettings(s) {
       <label>Subtitle (venue / date)<input id="cfg-subtitle" data-change="cfg" data-field="subtitle" value="${esc(c.subtitle)}" maxlength="120" placeholder="e.g. The Red Lion · Friday 4 Dec"></label>
       <label>Accent colour<input id="cfg-accent" type="color" data-change="cfg" data-field="accent" value="${esc(c.accent)}"></label>
       <label class="check"><input id="cfg-logo" type="checkbox" data-change="cfg-bool" data-field="showLogo" ${c.showLogo ? 'checked' : ''}> Show the JWI logo on the TV</label>
+      <label>TV screens
+        <select id="cfg-rotate" data-change="tv-rotate">
+          ${[...new Set([0, 10, 15, 20, 30, 45, 60, c.tvRotate])].sort((a, b) => a - b).map((n) => `<option value="${n}" ${n === c.tvRotate ? 'selected' : ''}>${n ? `Rotate: table, chart, head to head, stats… every ${n} s` : 'Live screen only (no rotation)'}</option>`).join('')}
+        </select></label>
       <label>Game (shown on TV)<input id="cfg-game" data-change="cfg" data-field="gameType" value="${esc(c.gameType)}" maxlength="40"></label>
       <div class="row2">
         <label>Board 1 name<input id="cfg-b1" data-change="board-name" data-idx="0" value="${esc(c.boardNames[0])}" maxlength="30"></label>
@@ -1472,6 +1476,7 @@ const changes = {
     act('Edited players', (s) => T.updateTeam(s, el.dataset.id, { players }));
   },
   cfg: (el) => act('Changed settings', (s) => T.updateConfig(s, { [el.dataset.field]: el.value })) || render(),
+  'tv-rotate': (el) => act('Changed TV screens', (s) => T.updateConfig(s, { tvRotate: Number(el.value) })) || render(),
   'cfg-bool': (el) => act('Changed settings', (s) => T.updateConfig(s, { [el.dataset.field]: el.checked })) || render(),
   'board-name': (el) => {
     const names = [...S().config.boardNames];

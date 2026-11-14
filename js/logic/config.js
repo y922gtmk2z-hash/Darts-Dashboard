@@ -18,6 +18,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   finalAlone: true, // the final waits until every other match is finished
   showLogo: true,
   autoBackup: false, // download a JSON backup after every finished match
+  tvRotate: 0, // seconds per TV screen when cycling through them; 0 = live screen only
   boardNames: Object.freeze(['Board 1', 'Board 2']),
   // Keyboard shortcuts on the admin page. Key = +1 leg, Shift+key = -1 leg.
   keys: Object.freeze({ b1Home: 'q', b1Away: 'a', b2Home: 'p', b2Away: 'l' }),
@@ -73,6 +74,7 @@ export function normalizeConfig(input = {}) {
     finalAlone: typeof c.finalAlone === 'boolean' ? c.finalAlone : d.finalAlone,
     showLogo: typeof c.showLogo === 'boolean' ? c.showLogo : d.showLogo,
     autoBackup: typeof c.autoBackup === 'boolean' ? c.autoBackup : d.autoBackup,
+    tvRotate: (() => { const n = clampInt(c.tvRotate, 0, 300, d.tvRotate); return n && n < 5 ? 5 : n; })(),
     boardNames,
     keys,
   };
