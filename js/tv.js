@@ -301,7 +301,8 @@ function upNextHTML(s, n) {
   const boardOf = new Map([[next[1]?.id, 1], [next[2]?.id, 2]]);
   return `<ol class="list">${q.map((f) => {
     const b = boardOf.get(f.id);
-    return `<li><span class="tagc">${b ? esc(s.config.boardNames[b - 1]) : esc(stageName(f, { short: true }))}</span>
+    const board = b ?? f.plannedBoard;
+    return `<li><span class="tagc ${board ? `b${board}` : ''}">${board ? esc(s.config.boardNames[board - 1]) : esc(stageName(f, { short: true }))}</span>
       <span class="teams">${slotBlock(s, f, 'home')}<em>v</em>${slotBlock(s, f, 'away')}</span></li>`;
   }).join('')}</ol>`;
 }

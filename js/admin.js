@@ -55,6 +55,7 @@ const prefs = (() => {
 let tab = prefs.get('tab', null) ?? (S().phase === 'setup' ? 'teams' : 'live');
 let fixtureFilter = prefs.get('fixtureFilter', 'upcoming');
 let fixtureTeam = prefs.get('fixtureTeam', '');
+let fixtureBoard = prefs.get('fixtureBoard', 'all'); // 'all' | '1' | '2'
 
 // ---------------------------------------------------------------- toasts & dialogs
 
@@ -327,7 +328,7 @@ function render() {
 
 function focusSelector(el) {
   if (el.id) return `#${CSS.escape(el.id)}`;
-  const keys = ['action', 'id', 'side', 'delta', 'board', 'tab', 'filter', 'idx'];
+  const keys = ['action', 'id', 'side', 'delta', 'board', 'boardView', 'scope', 'tab', 'filter', 'idx'];
   const parts = keys.filter((k) => el.dataset[k] !== undefined).map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`);
   return parts.length ? parts.join('') : null;
 }
@@ -460,7 +461,7 @@ function boardPanel(s, board, suggested) {
     ? `<label class="picker">Or start another match:
         <select id="pick-${board}" data-change="start-pick" data-board="${board}">
           <option value="">Choose…</option>
-          ${options.map((x) => `<option value="${x.id}">${esc(stageName(x, { short: true }))} — ${esc(teamText(s, x.homeId, slotName(s, x, 'home')))} v ${esc(teamText(s, x.awayId, slotName(s, x, 'away')))}</option>`).join('')}
+          ${options.map((x) => `<option value="${x.id}">${esc(stageName(x, { short: true }))} — ${esc(teamText(s, x.homeId, slotName(s, x, 'home')))} v ${esc(teamText(s, x.awayId, slotName(s, x, 'away')))}${x.plannedBoard && x.plannedBoard !== board ? ` (planned for ${esc(s.config.boardNames[x.plannedBoard - 1])})` : ''}</option>`).join('')}
         </select></label>`
     : '';
   return `<article class="board free"><header><h2>${name}</h2><span class="tag">Free</span></header>
@@ -499,7 +500,7 @@ function queueList(s, next) {
   return `<ol class="queue">${q.slice(0, 8).map((f) => {
     const m = marks.get(f.id);
     return `<li>
-      <span class="q-stage">${esc(stageName(f, { short: true }))}</span>
+      <span class="q-stage">${esc(stageName(f, { short: true }))}${f.plannedBoard ? `<span class="board-chip b${f.plannedBoard}" title="Planned for ${esc(s.config.boardNames[f.plannedBoard - 1])}">B${f.plannedBoard}</span>` : ''}</span>
       <span class="q-teams">${slotBlock(s, f, 'home')} <em>v</em> ${slotBlock(s, f, 'away')}</span>
       ${m ? `<span class="tag" title="${T.liveOnBoard(s, m) ? 'Starts when this board is free' : 'Ready to start now'}">${T.liveOnBoard(s, m) ? 'after' : '→'} ${esc(s.config.boardNames[m - 1])}</span>` : ''}
       <span class="q-actions">
@@ -524,24 +525,44 @@ function viewFixtures(s) {
   if (fixtureFilter === 'played') list = list.filter((f) => f.status === 'done').sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0));
   if (fixtureTeam && !T.teamById(s, fixtureTeam)) fixtureTeam = '';
   if (fixtureTeam) list = list.filter((f) => f.homeId === fixtureTeam || f.awayId === fixtureTeam);
+  const boardView = fixtureBoard === '1' || fixtureBoard === '2' ? Number(fixtureBoard) : null;
+  if (boardView) list = list.filter((f) => (f.status === 'live' ? f.board : f.plannedBoard) === boardView);
+  // Running order on each board (1 = next on that board).
+  const boardPos = new Map();
+  for (const b of [1, 2]) {
+    T.upcoming(s).filter((f) => f.plannedBoard === b).forEach((f, i) => boardPos.set(f.id, i + 1));
+  }
   const { played, total } = T.leagueProgress(s);
+  const boardSeg = { all: 'Both boards', 1: s.config.boardNames[0], 2: s.config.boardNames[1] };
   return `${editor}<section class="card">
     <div class="card-head">
       <h2>Fixtures <span class="muted small-text">${played}/${total} league matches played</span></h2>
       <div class="fx-filters">
+        <div class="seg board-seg" role="group" aria-label="Show one board's queue">${Object.entries(boardSeg).map(([k, v]) => `<button data-action="fixture-board-view" data-board-view="${k}" aria-pressed="${String(k) === String(fixtureBoard)}">${esc(v)}</button>`).join('')}</div>
         <select id="fx-team" data-change="fixture-team" aria-label="Show matches for one team">${teamOptions(s, fixtureTeam, 'All teams')}</select>
         <div class="seg">${Object.entries(filters).map(([k, v]) => `<button data-action="filter" data-filter="${k}" aria-pressed="${k === fixtureFilter}">${v}</button>`).join('')}</div>
       </div>
     </div>
     ${s.phase === 'league' && played === 0 && !T.liveFixtures(s).length ? `<p class="muted">Nothing played yet — you can still <button class="link" data-action="back-to-setup">go back to setup</button> to change teams or once/twice.</p>` : ''}
+    ${boardView ? `<p class="muted small-text">${esc(s.config.boardNames[boardView - 1])} queue: the number is the order on this board (1 = next). ↑ ↓ and Play next move matches within this board only.</p>` : ''}
     <table class="fixtures">
-      <thead><tr><th>#</th><th>Stage</th><th class="r">Home</th><th class="c">Score</th><th>Away</th><th>Status</th><th class="r">Actions</th></tr></thead>
-      <tbody>${list.map((f) => fixtureRow(s, f)).join('') || `<tr><td colspan="7" class="muted">Nothing here.</td></tr>`}</tbody>
+      <thead><tr><th title="${boardView ? 'Order on this board' : 'Overall order'}">#</th><th>Stage</th><th>Board</th><th class="r">Home</th><th class="c">Score</th><th>Away</th><th>Status</th><th class="r">Actions</th></tr></thead>
+      <tbody>${list.map((f) => fixtureRow(s, f, { boardView, boardPos })).join('') || `<tr><td colspan="8" class="muted">Nothing here.</td></tr>`}</tbody>
     </table>
   </section>`;
 }
 
-function fixtureRow(s, f) {
+function boardCell(s, f) {
+  if (f.status === 'scheduled') {
+    const opt = (v, label) => `<option value="${v}" ${String(f.plannedBoard ?? '') === String(v) ? 'selected' : ''}>${esc(label)}</option>`;
+    return `<select id="fb-${f.id}" class="board-select b${f.plannedBoard ?? 0}" data-change="fixture-board" data-id="${f.id}" aria-label="Board for this match">
+      ${opt(1, s.config.boardNames[0])}${opt(2, s.config.boardNames[1])}${opt('', 'Either')}</select>`;
+  }
+  const b = f.status === 'live' ? f.board : f.plannedBoard;
+  return b ? `<span class="board-chip b${b}">${esc(s.config.boardNames[b - 1])}</span>` : '<span class="muted">–</span>';
+}
+
+function fixtureRow(s, f, { boardView = null, boardPos = new Map() } = {}) {
   const avgs = f.homeAvg != null || f.awayAvg != null
     ? `<span class="avg-under num" title="3-dart averages">${fmtAvg(f.homeAvg) || '–'} · ${fmtAvg(f.awayAvg) || '–'}</span>` : '';
   const score = f.status === 'scheduled' ? '<span class="muted">–</span>' : `<span class="num">${f.homeLegs} – ${f.awayLegs}</span>${avgs}`;
@@ -557,9 +578,10 @@ function fixtureRow(s, f) {
   } else {
     status = '<span class="muted">Scheduled</span>';
     if (f.homeId && f.awayId) {
-      actions = `<button class="small ghost" data-action="move" data-id="${f.id}" data-delta="-1" aria-label="Move earlier">↑</button>
-        <button class="small ghost" data-action="move" data-id="${f.id}" data-delta="1" aria-label="Move later">↓</button>
-        <button class="small" data-action="play-next" data-id="${f.id}">Play next</button>`;
+      const scope = boardView ? 'data-scope="board"' : '';
+      actions = `<button class="small ghost" data-action="move" data-id="${f.id}" data-delta="-1" ${scope} aria-label="Move earlier">↑</button>
+        <button class="small ghost" data-action="move" data-id="${f.id}" data-delta="1" ${scope} aria-label="Move later">↓</button>
+        <button class="small" data-action="play-next" data-id="${f.id}" ${scope}>Play next</button>`;
     }
     if (f.stage === 'league' && s.phase === 'league') {
       actions += `<button class="small" data-action="fixture-edit" data-id="${f.id}">Edit</button>
@@ -568,8 +590,9 @@ function fixtureRow(s, f) {
     }
   }
   return `<tr class="${f.status}">
-    <td class="num muted">${f.order}</td>
+    <td class="num muted">${boardView && f.status === 'scheduled' ? boardPos.get(f.id) ?? '' : f.order}</td>
     <td>${esc(stageName(f, { short: f.stage === 'league' }))}${f.stage === 'league' && f.round ? `<span class="muted small-text"> · R${f.round}</span>` : ''}</td>
+    <td>${boardCell(s, f)}</td>
     <td class="r ${w && w === f.homeId ? 'win' : ''}">${slotBlock(s, f, 'home')}</td>
     <td class="c">${score}</td>
     <td class="${w && w === f.awayId ? 'win' : ''}">${slotBlock(s, f, 'away')}</td>
@@ -589,7 +612,18 @@ function fixtureEditor(s) {
   const name = (id) => esc(teamText(s, id));
   const pair = (p) => `${name(p.a)} v ${name(p.b)}${p.expected > 1 || p.count > 1 ? ` <span class="muted">(${p.count}/${p.expected})</span>` : ''}`;
   const list = (items, max = 12) => `${items.slice(0, max).map(pair).join(' · ')}${items.length > max ? ` · <span class="muted">+${items.length - max} more</span>` : ''}`;
-  const perTeam = s.teams.map((t) => `<span class="chip">${teamBlock(s, t.id, { inline: true })} <b class="num">${b.perTeam.get(t.id) ?? 0}</b></span>`).join('');
+  const perTeam = s.teams.map((t) => {
+    const [b1, b2] = b.perTeamBoards.get(t.id) ?? [0, 0];
+    return `<span class="chip">${teamBlock(s, t.id, { inline: true })} <b class="num">${b.perTeam.get(t.id) ?? 0}</b>
+      <span class="board-split num" title="${esc(s.config.boardNames[0])} / ${esc(s.config.boardNames[1])}">B1 ${b1} · B2 ${b2}</span></span>`;
+  }).join('');
+  const boardLines = [];
+  if (s.fixtures.some((f) => f.stage === 'league')) {
+    if (b.expected === 2 && b.complete && !b.notOnBothBoards.length && !b.unassigned) boardLines.push(`<p class="ok-text">✓ Every pair plays once on ${esc(s.config.boardNames[0])} and once on ${esc(s.config.boardNames[1])}.</p>`);
+    else if (b.boardsEven && !b.unassigned && !b.notOnBothBoards.length) boardLines.push(`<p class="ok-text">✓ Every team's matches are spread evenly over both boards.</p>`);
+    if (b.notOnBothBoards.length) boardLines.push(`<p><strong>Not once on each board (${b.notOnBothBoards.length}):</strong> ${b.notOnBothBoards.slice(0, 10).map((p) => `${name(p.a)} v ${name(p.b)} <span class="muted">(B1 ${p.board1} · B2 ${p.board2})</span>`).join(' · ')}${b.notOnBothBoards.length > 10 ? ` · <span class="muted">+${b.notOnBothBoards.length - 10} more</span>` : ''}</p>`);
+    if (b.unassigned) boardLines.push(`<p><strong>${b.unassigned} match${b.unassigned === 1 ? '' : 'es'} not planned for a board</strong> (either board can take ${b.unassigned === 1 ? 'it' : 'them'}).</p>`);
+  }
   const once = s.config.doubleRoundRobin ? 'twice' : 'once';
   let status;
   if (!s.fixtures.some((f) => f.stage === 'league')) {
@@ -608,13 +642,19 @@ function fixtureEditor(s) {
         <select id="af-home" name="home" aria-label="Home team">${teamOptions(s, '', 'Home team…')}</select>
         <span class="muted">v</span>
         <select id="af-away" name="away" aria-label="Away team">${teamOptions(s, '', 'Away team…')}</select>
+        <select id="af-board" name="board" aria-label="Board">
+          <option value="auto">Board: auto</option>
+          <option value="1">${esc(s.config.boardNames[0])}</option>
+          <option value="2">${esc(s.config.boardNames[1])}</option>
+          <option value="">Either board</option>
+        </select>
         <button class="primary">Add</button>
       </form>
-      <p class="muted small-text">New matches go to the end of the queue — use “Play next” or Edit to move them.</p>
+      <p class="muted small-text">New matches go to the end of the queue. <em>Board: auto</em> puts a pair's second meeting on the other board and keeps every team's boards even.</p>
       <details class="bulk-fixtures">
         <summary>Paste a fixture list</summary>
         <form data-form="bulk-fixtures">
-          <p class="muted small-text">One match per line, in play order: <code>Team A v Team B</code> (also “vs” or “-”). Team names must match the Teams tab.</p>
+          <p class="muted small-text">One match per line, in play order: <code>Team A v Team B</code> (also “vs” or “-”). Add the board at the end if you like: <code>Team A v Team B (Board 2)</code>. Team names must match the Teams tab.</p>
           <textarea id="bulk-fixtures" name="bulk" rows="6" placeholder="Double Trouble v The Bullseyes&#10;Treble Makers vs Oche Dear"></textarea>
           <button class="primary">Add matches</button>
         </form>
@@ -623,10 +663,12 @@ function fixtureEditor(s) {
     <div class="card">
       <h2>Fixture check</h2>
       ${status}
-      <p class="small-text muted">League matches per team:</p>
+      ${boardLines.join('')}
+      <p class="small-text muted">League matches per team (and on each board):</p>
       <div class="chips">${perTeam}</div>
       <div class="btn-row">
         <button class="small" data-action="fixtures-fill" title="Keep played matches; schedule exactly the meetings still owed">${s.fixtures.some((f) => f.stage === 'league') ? 'Regenerate unplayed matches' : `Generate full ${once}-each round robin`}</button>
+        <button class="small" data-action="fixtures-balance" ${T.upcoming(s).some((f) => f.stage === 'league') ? '' : 'disabled'} title="Re-plan the boards of all unplayed matches: each pair once on each board, everyone's boards even. The order stays the same.">Balance boards automatically</button>
         <button class="small danger-ghost" data-action="fixtures-clear" ${T.upcoming(s).some((f) => f.stage === 'league') ? '' : 'disabled'}>Delete all unplayed matches</button>
       </div>
     </div>
@@ -646,11 +688,17 @@ async function editFixtureDialog(id) {
         <span>v</span>
         <label>Away<select name="away">${teamOptions(s, f.awayId)}</select></label>
       </div>
+      <label>Board<select name="board">
+        <option value="1" ${f.plannedBoard === 1 ? 'selected' : ''}>${esc(s.config.boardNames[0])}</option>
+        <option value="2" ${f.plannedBoard === 2 ? 'selected' : ''}>${esc(s.config.boardNames[1])}</option>
+        <option value="" ${f.plannedBoard == null ? 'selected' : ''}>Either board</option>
+      </select></label>
       <label>Position in the queue (1 = next)<input name="pos" type="number" min="1" max="${queue.length}" value="${pos}"></label>`,
     buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Save', value: 'save', kind: 'primary', autofocus: true }],
     onSubmit(form) {
       try {
-        let st = T.updateFixture(S(), id, { homeId: form.home.value, awayId: form.away.value });
+        const board = form.board.value === '' ? null : Number(form.board.value);
+        let st = T.updateFixture(S(), id, { homeId: form.home.value, awayId: form.away.value, board });
         if (Number(form.pos.value) !== pos) st = T.moveFixtureTo(st, id, Number(form.pos.value));
         next = st;
         return true;
@@ -1031,8 +1079,14 @@ const actions = {
     }
   },
   filter: (d) => { fixtureFilter = d.filter; prefs.set('fixtureFilter', fixtureFilter); render(); },
-  move: (d) => act('Reordered fixtures', (s) => T.moveFixture(s, d.id, Number(d.delta))),
-  'play-next': (d) => act('Reordered fixtures', (s) => T.playNext(s, d.id)),
+  move: (d) => act('Reordered fixtures', (s) => T.moveFixture(s, d.id, Number(d.delta), { sameBoard: d.scope === 'board' })),
+  'play-next': (d) => act('Reordered fixtures', (s) => T.playNext(s, d.id, { sameBoard: d.scope === 'board' })),
+  'fixture-board-view': (d) => { fixtureBoard = d.boardView; prefs.set('fixtureBoard', fixtureBoard); render(); },
+  'fixtures-balance': async () => {
+    if (await confirmAction('Balance boards automatically?', 'Every unplayed match gets a board so that each pair plays once on each board where possible and every team\'s matches are spread evenly. The order stays the same. You can Undo.', 'Balance boards')) {
+      act('Balanced boards', T.autoAssignBoards);
+    }
+  },
   'edit-result': (d) => editResultDialog(d.id),
   'fixture-edit': (d) => editFixtureDialog(d.id),
   'fixture-swap': (d) => act('Swapped home/away', (s) => T.swapHomeAway(s, d.id)),
@@ -1168,6 +1222,7 @@ const changes = {
     if (Object.entries(keys).some(([k, x]) => k !== el.dataset.key && x === v)) { toast('That key is already used.', 'error'); render(); return; }
     act('Changed shortcut', (s) => T.updateConfig(s, { keys: { [el.dataset.key]: v } }));
   },
+  'fixture-board': (el) => act('Changed board', (s) => T.setFixtureBoard(s, el.dataset.id, el.value === '' ? null : Number(el.value))) || render(),
   'fixture-team': (el) => { fixtureTeam = el.value; prefs.set('fixtureTeam', fixtureTeam); render(); },
   avg: (el) => {
     const side = el.dataset.side;
@@ -1199,7 +1254,8 @@ $('#main').addEventListener('submit', (e) => {
       requestAnimationFrame(() => $('#new-name')?.focus());
     }
   } else if (form.dataset.form === 'add-fixture') {
-    if (act('Added match', (s) => T.addFixture(s, form.home.value, form.away.value))) {
+    const board = form.board.value === 'auto' ? undefined : form.board.value === '' ? null : Number(form.board.value);
+    if (act('Added match', (s) => T.addFixture(s, form.home.value, form.away.value, { board }))) {
       toast('Match added to the end of the queue.', 'success');
       requestAnimationFrame(() => $('#af-home')?.focus());
     }

@@ -298,3 +298,5 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 .tv-table.with-avg th.pts { width: 84px; }
 .tv-table.with-avg th.form-h { width: 230px; }
 .tv-table.with-avg td { padding: 0 8px; }
+.tagc.b1 { color: #a9c8ff; }
+.tagc.b2 { color: #8fe3b6; }

@@ -42,6 +42,7 @@ export function normalizeState(raw) {
       homeId: f.homeId ?? null,
       awayId: f.awayId ?? null,
       board: f.board === 1 || f.board === 2 ? f.board : null,
+      plannedBoard: f.plannedBoard === 1 || f.plannedBoard === 2 ? f.plannedBoard : null,
       status: ['scheduled', 'live', 'done'].includes(f.status) ? f.status : 'scheduled',
       homeLegs: Math.max(0, Number(f.homeLegs) || 0),
       awayLegs: Math.max(0, Number(f.awayLegs) || 0),
@@ -173,12 +174,15 @@ export function nextUp(state) {
         .filter((f) => f.board !== board)
         .flatMap((f) => [f.homeId, f.awayId]),
     );
-    const pick = queue.find(
-      (f) =>
-        !taken.has(f.id) &&
-        !finalMustWait(state, f, taken) &&
-        ![f.homeId, f.awayId].some((t) => busyElsewhere.has(t) || reserved.has(t)),
-    );
+    const free = (f) =>
+      !taken.has(f.id) &&
+      !finalMustWait(state, f, taken) &&
+      ![f.homeId, f.awayId].some((t) => busyElsewhere.has(t) || reserved.has(t));
+    // Matches planned for this board (or either board) first. Only when this
+    // board has nothing planned left does it borrow from the other board's queue.
+    const ownQueueEmpty = !queue.some((f) => !taken.has(f.id) && f.plannedBoard === board);
+    const pick = queue.find((f) => free(f) && (f.plannedBoard == null || f.plannedBoard === board))
+      ?? (ownQueueEmpty ? queue.find(free) : undefined);
     if (pick) {
       result[board] = pick;
       taken.add(pick.id);
@@ -397,16 +401,74 @@ function nextLeagueId(s) {
   return `L${n + 1}`;
 }
 
-/** Add a league match at the end of the queue. */
-export function addFixture(state, homeId, awayId) {
+function checkBoard(board) {
+  if (board !== 1 && board !== 2 && board !== null) fail('Board must be 1, 2 or either.');
+  return board;
+}
+
+/**
+ * The board a new meeting of two teams should go on: the board this pair has
+ * NOT used yet (so a pair that meets twice plays once on each); otherwise the
+ * board that keeps both teams' Board 1 / Board 2 counts even.
+ */
+export function suggestBoard(state, homeId, awayId) {
+  const pairUse = [0, 0];
+  const teamUse = new Map();
+  for (const f of leagueFixtures(state)) {
+    if (!f.plannedBoard) continue;
+    const i = f.plannedBoard - 1;
+    if ((f.homeId === homeId && f.awayId === awayId) || (f.homeId === awayId && f.awayId === homeId)) pairUse[i]++;
+    for (const t of [f.homeId, f.awayId]) {
+      const u = teamUse.get(t) ?? [0, 0];
+      u[i]++;
+      teamUse.set(t, u);
+    }
+  }
+  if (pairUse[0] !== pairUse[1]) return pairUse[0] < pairUse[1] ? 1 : 2;
+  const lean = [homeId, awayId].reduce((n, t) => n + ((teamUse.get(t)?.[0] ?? 0) - (teamUse.get(t)?.[1] ?? 0)), 0);
+  if (lean !== 0) return lean > 0 ? 2 : 1;
+  const all = leagueFixtures(state).filter((f) => f.plannedBoard);
+  return all.filter((f) => f.plannedBoard === 1).length <= all.filter((f) => f.plannedBoard === 2).length ? 1 : 2;
+}
+
+/**
+ * Add a league match at the end of the queue. `board`: 1, 2, null (either),
+ * or undefined to pick automatically (see suggestBoard).
+ */
+export function addFixture(state, homeId, awayId, { board } = {}) {
   assertLeagueEditable(state);
   assertPairing(state, homeId, awayId);
+  const plannedBoard = board === undefined ? suggestBoard(state, homeId, awayId) : checkBoard(board);
   return mutate(state, (s) => {
     const order = Math.max(0, ...s.fixtures.filter((f) => f.stage === 'league').map((f) => f.order)) + 1;
     s.fixtures.push({
-      id: nextLeagueId(s), stage: 'league', round: null, homeId, awayId, board: null,
+      id: nextLeagueId(s), stage: 'league', round: null, homeId, awayId, board: null, plannedBoard,
       status: 'scheduled', homeLegs: 0, awayLegs: 0, order, startedAt: null, finishedAt: null,
     });
+  });
+}
+
+/** Plan an unplayed match for Board 1, Board 2 or either (null). */
+export function setFixtureBoard(state, id, board) {
+  checkBoard(board);
+  return mutate(state, (s) => {
+    const f = getFixture(s, id);
+    if (f.status !== 'scheduled') fail('Only matches that have not started can be moved to another board.');
+    f.plannedBoard = board;
+  });
+}
+
+/**
+ * Re-plan the boards of every unplayed league match: each pair plays once on
+ * each board where possible, every team's Board 1 / Board 2 counts stay even,
+ * and the queue order is kept.
+ */
+export function autoAssignBoards(state) {
+  assertLeagueEditable(state);
+  return mutate(state, (s) => {
+    const queue = s.fixtures.filter((f) => f.stage === 'league' && f.status === 'scheduled').sort(byOrder);
+    for (const f of queue) f.plannedBoard = null;
+    for (const f of queue) f.plannedBoard = suggestBoard(s, f.homeId, f.awayId);
   });
 }
 
@@ -421,8 +483,15 @@ export function parseBulkFixtures(state, text) {
   const skippedLines = [];
   const skip = (raw, why) => { skipped.push(why); skippedLines.push(raw.trim()); };
   for (const raw of String(text ?? '').split(/\r?\n/)) {
-    const line = raw.replace(/^\s*(?:\d+[.):]|[-*•])\s*/, '').trim();
+    let line = raw.replace(/^\s*(?:\d+[.):]|[-*•])\s*/, '').trim();
     if (!line) continue;
+    // Optional board at the end: "(Board 2)", "[B1]", "- board 1", "on board 2"
+    let board;
+    const b = line.match(/\s*(?:[([]\s*(?:board|b)\s*([12])\s*[)\]]|(?:-|on|@)?\s*\bboard\s*([12]))\s*$/i);
+    if (b) {
+      board = Number(b[1] ?? b[2]);
+      line = line.slice(0, b.index).trim();
+    }
     const m = line.match(/^(.+?)\s+(?:v|vs\.?|versus|-|@)\s+(.+)$/i);
     if (!m) { skip(raw, `${line} (use “Team A v Team B”)`); continue; }
     const home = byName.get(m[1].trim().toLowerCase());
@@ -432,7 +501,7 @@ export function parseBulkFixtures(state, text) {
       continue;
     }
     if (home === away) { skip(raw, `${line} (same team twice)`); continue; }
-    matches.push([home, away]);
+    matches.push([home, away, board]);
   }
   return { matches, skipped, skippedLines };
 }
@@ -440,18 +509,20 @@ export function parseBulkFixtures(state, text) {
 export function addFixturesBulk(state, text) {
   const { matches, skipped, skippedLines } = parseBulkFixtures(state, text);
   let s = state;
-  for (const [h, a] of matches) s = addFixture(s, h, a);
+  for (const [h, a, board] of matches) s = addFixture(s, h, a, { board });
   return { state: s, added: matches.length, skipped, skippedLines };
 }
 
 /** Change who plays in an unplayed league match. */
-export function updateFixture(state, id, { homeId, awayId }) {
+export function updateFixture(state, id, { homeId, awayId, board }) {
   assertLeagueEditable(state);
   assertPairing(state, homeId, awayId);
+  if (board !== undefined) checkBoard(board);
   return mutate(state, (s) => {
     const f = getScheduledLeague(s, id);
     f.homeId = homeId;
     f.awayId = awayId;
+    if (board !== undefined) f.plannedBoard = board;
   });
 }
 
@@ -495,7 +566,8 @@ export function regenerateUnplayed(state) {
     s.fixtures = kept;
     for (const m of remaining) {
       const order = Math.max(0, ...s.fixtures.filter((f) => f.stage === 'league').map((f) => f.order)) + 1;
-      s.fixtures.push({ ...m, id: nextLeagueId(s), order });
+      // A pair that already met on one board plays the rest on the other.
+      s.fixtures.push({ ...m, id: nextLeagueId(s), order, plannedBoard: suggestBoard(s, m.homeId, m.awayId) });
     }
   });
 }
@@ -530,14 +602,29 @@ export function leagueBalance(state) {
     perTeam.set(f.awayId, (perTeam.get(f.awayId) ?? 0) + 1);
     pairs.set(key(f.homeId, f.awayId), (pairs.get(key(f.homeId, f.awayId)) ?? 0) + 1);
   }
+  // Board 1 / Board 2 per team, and per pair (planned, or where it was actually played).
+  const perTeamBoards = new Map(state.teams.map((t) => [t.id, [0, 0]]));
+  const pairBoards = new Map();
+  let unassigned = 0;
+  for (const f of league) {
+    if (!f.plannedBoard) { unassigned++; continue; }
+    for (const t of [f.homeId, f.awayId]) perTeamBoards.get(t) && perTeamBoards.get(t)[f.plannedBoard - 1]++;
+    const k = key(f.homeId, f.awayId);
+    const pb = pairBoards.get(k) ?? [0, 0];
+    pb[f.plannedBoard - 1]++;
+    pairBoards.set(k, pb);
+  }
   const missing = [];
   const extra = [];
+  const notOnBothBoards = [];
   const ids = state.teams.map((t) => t.id);
   for (let i = 0; i < ids.length; i++) {
     for (let j = i + 1; j < ids.length; j++) {
       const n = pairs.get(key(ids[i], ids[j])) ?? 0;
       if (n < expected) missing.push({ a: ids[i], b: ids[j], count: n, expected });
       if (n > expected) extra.push({ a: ids[i], b: ids[j], count: n, expected });
+      const pb = pairBoards.get(key(ids[i], ids[j])) ?? [0, 0];
+      if (expected === 2 && n === 2 && !(pb[0] === 1 && pb[1] === 1)) notOnBothBoards.push({ a: ids[i], b: ids[j], board1: pb[0], board2: pb[1] });
     }
   }
   const counts = [...perTeam.values()];
@@ -548,6 +635,10 @@ export function leagueBalance(state) {
     extra,
     even: counts.length > 0 && counts.every((c) => c === counts[0]),
     complete: missing.length === 0 && extra.length === 0,
+    perTeamBoards,
+    notOnBothBoards,
+    unassigned,
+    boardsEven: [...perTeamBoards.values()].every(([a, b]) => Math.abs(a - b) <= (expected === 2 ? 0 : 1)),
   };
 }
 
@@ -561,12 +652,15 @@ export function backToSetup(state) {
   });
 }
 
-/** Move a scheduled match up (-1) or down (+1) past the neighbouring scheduled match. */
-export function moveFixture(state, id, delta) {
+/**
+ * Move a scheduled match up (-1) or down (+1) past the neighbouring scheduled
+ * match — or, with sameBoard, past the neighbouring match on the same board.
+ */
+export function moveFixture(state, id, delta, { sameBoard = false } = {}) {
   return mutate(state, (s) => {
     const f = getFixture(s, id);
     if (f.status !== 'scheduled') fail('Only upcoming matches can be moved.');
-    const queue = s.fixtures.filter((x) => x.status === 'scheduled' && x.stage === f.stage).sort(byOrder);
+    const queue = s.fixtures.filter((x) => x.status === 'scheduled' && x.stage === f.stage && (!sameBoard || x.plannedBoard === f.plannedBoard)).sort(byOrder);
     const i = queue.indexOf(f);
     const other = queue[i + delta];
     if (!other) return;
@@ -574,12 +668,12 @@ export function moveFixture(state, id, delta) {
   });
 }
 
-/** Put a scheduled match at the front of the queue. */
-export function playNext(state, id) {
+/** Put a scheduled match at the front of the queue (of its board, with sameBoard). */
+export function playNext(state, id, { sameBoard = false } = {}) {
   return mutate(state, (s) => {
     const f = getFixture(s, id);
     if (f.status !== 'scheduled') fail('Only upcoming matches can be moved.');
-    const queue = s.fixtures.filter((x) => x.status === 'scheduled' && x.stage === f.stage).sort(byOrder);
+    const queue = s.fixtures.filter((x) => x.status === 'scheduled' && x.stage === f.stage && (!sameBoard || x.plannedBoard === f.plannedBoard)).sort(byOrder);
     const orders = queue.map((x) => x.order);
     const reordered = [f, ...queue.filter((x) => x !== f)];
     reordered.forEach((x, i) => (x.order = orders[i]));
@@ -604,6 +698,8 @@ export function startMatch(state, id, board) {
   return mutate(state, (s) => {
     const m = getFixture(s, id);
     Object.assign(m, { status: 'live', board, homeLegs: 0, awayLegs: 0, homeAvg: null, awayAvg: null, startedAt: Date.now(), finishedAt: null });
+    // League matches remember where they were actually played (it may differ from the plan).
+    if (m.stage === 'league') m.plannedBoard = board;
   });
 }
 

@@ -68,9 +68,16 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 3. Open the TV window and put it on the TV. It shows the logo and the registered teams. Check the admin page says **📺 TV connected**.
 4. Click **Generate fixtures & start league**, or **…start with an empty fixture list** to set every match yourself. After this, teams can be renamed but not added or removed.
 
+**Boards** (Fixtures tab)
+- Every match is planned for **Board 1** or **Board 2**. Generated fixtures give every pair one match on each board, so every team plays half its games on each. The two matches running side by side never involve the same team.
+- Use the **Board 1 / Board 2 / Both boards** switch to see one board's queue in its own running order. There, **↑ ↓** and **Play next** move matches within that board only.
+- Change any unplayed match's board with the dropdown in its **Board** column (or in **Edit**). *Either* lets whichever board is free take it.
+- **Fixture check** shows each team's Board 1 / Board 2 split and lists any pair that isn't once on each board. **Balance boards automatically** re-plans the boards of all unplayed matches without changing their order.
+- On **Live scoring**, each board's *Next up* comes from its own queue. If one board runs out while the other still has matches, it borrows the next one. You can always start a different match from the *Or start another match* list; a match started on the other board is recorded as played there.
+
 **Setting the fixtures yourself** (Fixtures tab, any time during the league)
-- **Add a match:** pick the home and away teams, then click **Add**. It goes to the end of the queue.
-- **Paste a fixture list:** one match per line, in play order, as `Team A v Team B` (`vs` and `-` also work). Team names must match the Teams tab. Any line that can't be read stays in the box with the reason, so you can fix it.
+- **Add a match:** pick the home and away teams (and optionally the board), then click **Add**. It goes to the end of the queue. *Board: auto* puts a pair's second meeting on the other board.
+- **Paste a fixture list:** one match per line, in play order, as `Team A v Team B` (`vs` and `-` also work), optionally ending with the board: `Team A v Team B (Board 2)`. Team names must match the Teams tab. Any line that can't be read stays in the box with the reason, so you can fix it.
 - On any match that hasn't started:
   - **Edit** changes the teams or its position in the queue (1 = next).
   - **⇄** swaps home and away.
