@@ -427,6 +427,22 @@ test('team spotlight and knockout tale-of-the-tape screens', { skip }, async () 
   await ctx.close();
 });
 
+test('starting the knockout plays the semi-final draw on the TV', { skip }, async () => {
+  const s = simulateUntil(leagueState(8), (x) => T.canStartKnockout(x), seededRandom(9));
+  const { ctx, admin, tv, errors } = await openPair({ state: s });
+  await tv.waitForSelector('main.body');
+  await admin.click('[data-action="knockout-preview"]');
+  await admin.click('dialog button:has-text("Start knockout")');
+  await tv.waitForSelector('#overlay.show .ov-card.draw');
+  assert.equal(await tv.locator('#overlay .dr-match').count(), 2);
+  const top = T.standings(s).slice(0, 4).map((r) => r.name);
+  const text = await tv.textContent('#overlay .ov-card.draw');
+  for (const name of top) assert.ok(text.includes(name), name);
+  assert.match(await tv.locator('#overlay .dr-match .dr-label').first().textContent(), /Semi-final 1/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the final waits for the 3rd place play-off', { skip }, async () => {
   let s = loadDemoTeams(T.createTournament({ thirdPlace: true }), 4);
   s = simulateUntil(s, (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done'), seededRandom(5));
