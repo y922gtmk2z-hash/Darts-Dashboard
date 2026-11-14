@@ -1,7 +1,7 @@
 // Offline support: once loaded, the app keeps working with wifi off.
 // Strategy: serve from cache immediately, refresh the cache in the background
 // (so a new deploy is picked up on the next reload). Bump VERSION to force it.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = `darts-dashboard-${VERSION}`;
 const ASSETS = [
   './',
@@ -21,6 +21,8 @@ const ASSETS = [
   './js/logic/standings.js',
   './js/logic/tournament.js',
   './js/logic/util.js',
+  './img/logo.png',
+  './img/icon-192.png',
 ];
 
 self.addEventListener('install', (event) => {

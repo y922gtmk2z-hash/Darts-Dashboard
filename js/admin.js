@@ -8,6 +8,7 @@ import {
   esc, stageName, slotName, playersText, formatLine, phaseLabel, timeAgo, applyTheme, registerServiceWorker,
 } from './view.js';
 
+const LONG_NAME = 24; // longer team names get shortened with … on parts of the TV
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -25,7 +26,9 @@ function act(label, fn) {
   try {
     const before = S();
     const next = fn(before);
-    if (next && next !== before) store.set(next, { label });
+    // Actions that change nothing (e.g. −1 at 0 legs) are not saved, so Undo
+    // always undoes something visible.
+    if (next && next !== before && JSON.stringify(next) !== JSON.stringify(before)) store.set(next, { label });
     return true;
   } catch (e) {
     toast(e.message, 'error');
@@ -50,10 +53,11 @@ const prefs = (() => {
 
 let tab = prefs.get('tab', null) ?? (S().phase === 'setup' ? 'teams' : 'live');
 let fixtureFilter = prefs.get('fixtureFilter', 'upcoming');
+let fixtureTeam = prefs.get('fixtureTeam', '');
 
 // ---------------------------------------------------------------- toasts & dialogs
 
-function toast(message, kind = 'info', { action, timeout = 5000 } = {}) {
+function toast(message, kind = 'info', { action, timeout = kind === 'error' ? 7000 : 3500 } = {}) {
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
   el.innerHTML = `<span>${esc(message)}</span>`;
@@ -149,6 +153,16 @@ async function importBackup(file) {
     toast('That file does not look like a tournament backup.', 'error');
     return;
   }
+  const problems = T.validateState(next);
+  if (problems.length) {
+    await ask({
+      title: 'This backup has problems',
+      body: `<p>It was <strong>not</strong> imported, so nothing has changed. Try an earlier backup file.</p>
+        <ul class="problems">${problems.slice(0, 8).map((p) => `<li>${esc(p)}</li>`).join('')}${problems.length > 8 ? `<li>…and ${problems.length - 8} more</li>` : ''}</ul>`,
+      buttons: [{ label: 'OK', value: 'ok', kind: 'primary', autofocus: true }],
+    });
+    return;
+  }
   const ok = await confirmAction(
     'Import backup?',
     `This replaces the current tournament with “${esc(next.config.title)}” (${next.teams.length} teams, phase: ${phaseLabel(next.phase)}). The current state stays in the recovery history.`,
@@ -161,12 +175,21 @@ async function importBackup(file) {
 
 // ---------------------------------------------------------------- scoring
 
-async function changeLegs(id, side, delta) {
+async function changeLegs(id, side, delta, { announce = false } = {}) {
   const before = S();
   const wasDecided = T.matchIsDecided(before, id);
   if (!act(delta > 0 ? 'Leg won' : 'Leg removed', (s) => T.adjustLegs(s, id, side, delta))) return;
-  flash(id, side);
-  if (!wasDecided && T.matchIsDecided(S(), id)) promptFinish(id);
+  const after = T.fixtureById(S(), id);
+  const prev = T.fixtureById(before, id);
+  const changed = after.homeLegs !== prev.homeLegs || after.awayLegs !== prev.awayLegs;
+  if (changed) {
+    flash(id, side);
+    if (announce) {
+      // Scored from the keyboard while another tab is open: confirm what happened.
+      toast(`${S().config.boardNames[after.board - 1]}: ${slotName(S(), after, 'home')} ${after.homeLegs}–${after.awayLegs} ${slotName(S(), after, 'away')}`, 'info', { timeout: 2500 });
+    }
+  }
+  if (T.matchIsDecided(S(), id) && (!wasDecided || (delta > 0 && !changed))) promptFinish(id);
 }
 
 let finishOpen = false;
@@ -242,24 +265,36 @@ function render() {
   renderSaved();
 
   for (const b of $$('.tabs [data-tab]')) {
-    b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+    const on = b.dataset.tab === tab;
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
+    if (on) $('#main').setAttribute('aria-labelledby', b.id);
   }
 
-  // Keep focus/caret across re-renders (inputs have stable ids).
+  // Keep focus/caret across re-renders: by id, or by the button's data-* identity.
   const active = document.activeElement;
-  const focusId = active && $('#main').contains(active) ? active.id : null;
-  const sel = focusId && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
+  const focusSel = active && $('#main').contains(active) ? focusSelector(active) : null;
+  const sel = focusSel && active.id && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
 
   const views = { live: viewLive, fixtures: viewFixtures, table: viewTable, teams: viewTeams, settings: viewSettings, backup: viewBackup };
   $('#main').innerHTML = (views[tab] ?? viewLive)(s);
 
-  if (focusId) {
-    const el = document.getElementById(focusId);
-    if (el) {
+  if (focusSel) {
+    const el = $(focusSel, $('#main'));
+    if (el && !el.disabled) {
       el.focus({ preventScroll: true });
       if (sel && 'setSelectionRange' in el) { try { el.setSelectionRange(...sel); } catch { /* ignore */ } }
+    } else if (el || focusSel.includes('data-action')) {
+      $('#main').focus({ preventScroll: true });
     }
   }
+}
+
+function focusSelector(el) {
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  const keys = ['action', 'id', 'side', 'delta', 'board', 'tab', 'filter', 'idx'];
+  const parts = keys.filter((k) => el.dataset[k] !== undefined).map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`);
+  return parts.length ? parts.join('') : null;
 }
 
 function renderBanners() {
@@ -392,7 +427,7 @@ function boardPanel(s, board, suggested) {
 }
 
 function canStartOn(s, f, board) {
-  if (T.liveOnBoard(s, board)) return false;
+  if (T.liveOnBoard(s, board) || T.finalMustWait(s, f)) return false;
   const busy = new Set(T.liveFixtures(s).flatMap((x) => [x.homeId, x.awayId]));
   return !busy.has(f.homeId) && !busy.has(f.awayId);
 }
@@ -425,7 +460,7 @@ function queueList(s, next) {
     return `<li>
       <span class="q-stage">${esc(stageName(f, { short: true }))}</span>
       <span class="q-teams">${esc(slotName(s, f, 'home'))} <em>v</em> ${esc(slotName(s, f, 'away'))}</span>
-      ${m ? `<span class="tag">→ ${esc(s.config.boardNames[m - 1])}</span>` : ''}
+      ${m ? `<span class="tag" title="${T.liveOnBoard(s, m) ? 'Starts when this board is free' : 'Ready to start now'}">${T.liveOnBoard(s, m) ? 'after' : '→'} ${esc(s.config.boardNames[m - 1])}</span>` : ''}
       <span class="q-actions">
         ${[1, 2].map((b) => canStartOn(s, f, b) ? `<button class="small" data-action="start" data-id="${f.id}" data-board="${b}" title="Start on ${esc(s.config.boardNames[b - 1])}">▶ B${b}</button>` : '').join('')}
       </span>
@@ -446,11 +481,16 @@ function viewFixtures(s) {
   let list = s.fixtures.slice().sort(T.byOrder);
   if (fixtureFilter === 'upcoming') list = list.filter((f) => f.status !== 'done');
   if (fixtureFilter === 'played') list = list.filter((f) => f.status === 'done').sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0));
+  if (fixtureTeam && !T.teamById(s, fixtureTeam)) fixtureTeam = '';
+  if (fixtureTeam) list = list.filter((f) => f.homeId === fixtureTeam || f.awayId === fixtureTeam);
   const { played, total } = T.leagueProgress(s);
   return `${editor}<section class="card">
     <div class="card-head">
       <h2>Fixtures <span class="muted small-text">${played}/${total} league matches played</span></h2>
-      <div class="seg">${Object.entries(filters).map(([k, v]) => `<button data-action="filter" data-filter="${k}" aria-pressed="${k === fixtureFilter}">${v}</button>`).join('')}</div>
+      <div class="fx-filters">
+        <select id="fx-team" data-change="fixture-team" aria-label="Show matches for one team">${teamOptions(s, fixtureTeam, 'All teams')}</select>
+        <div class="seg">${Object.entries(filters).map(([k, v]) => `<button data-action="filter" data-filter="${k}" aria-pressed="${k === fixtureFilter}">${v}</button>`).join('')}</div>
+      </div>
     </div>
     ${s.phase === 'league' && played === 0 && !T.liveFixtures(s).length ? `<p class="muted">Nothing played yet — you can still <button class="link" data-action="back-to-setup">go back to setup</button> to change teams or once/twice.</p>` : ''}
     <table class="fixtures">
@@ -737,7 +777,8 @@ function viewTeams(s) {
   const matches = (n * (n - 1)) / 2 * (s.config.doubleRoundRobin ? 2 : 1);
   const rows = s.teams.map((t, i) => `<tr>
     <td class="num muted">${i + 1}</td>
-    <td><input id="tn-${t.id}" data-change="team-name" data-id="${t.id}" value="${esc(t.name)}" maxlength="60" aria-label="Team name"></td>
+    <td><input id="tn-${t.id}" data-change="team-name" data-id="${t.id}" value="${esc(t.name)}" maxlength="60" aria-label="Team name">
+      ${t.name.length > LONG_NAME ? '<span class="hint-warn" title="Long names may be shortened with … on the TV">⚠ may be cut short on TV</span>' : ''}</td>
     <td><input id="tp0-${t.id}" data-change="team-player" data-idx="0" data-id="${t.id}" value="${esc(t.players[0])}" maxlength="40" placeholder="Player 1" aria-label="Player 1"></td>
     <td><input id="tp1-${t.id}" data-change="team-player" data-idx="1" data-id="${t.id}" value="${esc(t.players[1])}" maxlength="40" placeholder="Player 2" aria-label="Player 2"></td>
     <td class="r actions">${setup ? `
@@ -800,6 +841,7 @@ function viewSettings(s) {
       <label>Title<input id="cfg-title" data-change="cfg" data-field="title" value="${esc(c.title)}" maxlength="80"></label>
       <label>Subtitle (venue / date)<input id="cfg-subtitle" data-change="cfg" data-field="subtitle" value="${esc(c.subtitle)}" maxlength="120" placeholder="e.g. The Red Lion · Friday 4 Dec"></label>
       <label>Accent colour<input id="cfg-accent" type="color" data-change="cfg" data-field="accent" value="${esc(c.accent)}"></label>
+      <label class="check"><input id="cfg-logo" type="checkbox" data-change="cfg-bool" data-field="showLogo" ${c.showLogo ? 'checked' : ''}> Show the JWI logo on the TV</label>
       <label>Game (shown on TV)<input id="cfg-game" data-change="cfg" data-field="gameType" value="${esc(c.gameType)}" maxlength="40"></label>
       <div class="row2">
         <label>Board 1 name<input id="cfg-b1" data-change="board-name" data-idx="0" value="${esc(c.boardNames[0])}" maxlength="30"></label>
@@ -820,6 +862,7 @@ function viewSettings(s) {
         <label>Points for a loss<input id="pts-loss" type="number" min="0" max="99" data-change="points" data-which="loss" value="${c.points.loss}"></label>
       </div>
       <label class="check"><input id="cfg-third" type="checkbox" data-change="cfg-bool" data-field="thirdPlace" ${c.thirdPlace ? 'checked' : ''}> 3rd place play-off</label>
+      <label class="check"><input id="cfg-final-alone" type="checkbox" data-change="cfg-bool" data-field="finalAlone" ${c.finalAlone ? 'checked' : ''}> Play the final on its own (after every other match)</label>
       <p class="muted small-text">Top ${c.qualifiers} qualify for the semi-finals (1st v 4th, 2nd v 3rd).</p>
     </div>
     <div class="card">
@@ -1035,6 +1078,20 @@ $('.tabs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-tab]');
   if (b) actions.tab(b.dataset);
 });
+// Arrow keys move between tabs (WAI-ARIA tabs pattern).
+$('.tabs').addEventListener('keydown', (e) => {
+  const tabs = $$('.tabs [data-tab]');
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  const t = tabs[(to + tabs.length) % tabs.length];
+  tab = t.dataset.tab;
+  prefs.set('tab', tab);
+  render();
+  t.focus();
+});
 
 const changes = {
   'team-name': (el) => act('Renamed team', (s) => T.updateTeam(s, el.dataset.id, { name: el.value })) || render(),
@@ -1061,6 +1118,7 @@ const changes = {
     if (Object.entries(keys).some(([k, x]) => k !== el.dataset.key && x === v)) { toast('That key is already used.', 'error'); render(); return; }
     act('Changed shortcut', (s) => T.updateConfig(s, { keys: { [el.dataset.key]: v } }));
   },
+  'fixture-team': (el) => { fixtureTeam = el.value; prefs.set('fixtureTeam', fixtureTeam); render(); },
   'start-pick': (el) => {
     if (el.value) act('Started match', (s) => T.startMatch(s, el.value, Number(el.dataset.board)));
   },
@@ -1078,6 +1136,7 @@ $('#main').addEventListener('submit', (e) => {
   e.preventDefault();
   if (form.dataset.form === 'add-team') {
     const ok = act('Added team', (s) => T.addTeam(s, form.name.value, [form.p0.value, form.p1.value]));
+    if (ok && form.name.value.trim().length > LONG_NAME) toast('Long name — it may be shortened with … on parts of the TV.', 'info');
     if (ok) {
       form.reset();
       requestAnimationFrame(() => $('#new-name')?.focus());
@@ -1123,7 +1182,7 @@ document.addEventListener('keydown', (e) => {
     undo();
     return;
   }
-  if (typing || e.ctrlKey || e.metaKey || e.altKey || tab !== 'live') return;
+  if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
   const s = S();
   const key = e.key.toLowerCase();
   const map = {
@@ -1137,7 +1196,7 @@ document.addEventListener('keydown', (e) => {
   const f = T.liveOnBoard(s, hit[0]);
   if (!f) return;
   e.preventDefault();
-  changeLegs(f.id, hit[1], e.shiftKey ? -1 : 1);
+  changeLegs(f.id, hit[1], e.shiftKey ? -1 : 1, { announce: tab !== 'live' });
 });
 
 $('#undo').addEventListener('click', undo);
@@ -1182,6 +1241,32 @@ store.subscribe((_s, meta) => {
   }
   render();
 });
+
+// ---------------------------------------------------------------- TV presence
+// The TV window sends a heartbeat; show whether one is listening right now.
+let tvSeenAt = 0;
+const tvConnected = () => Date.now() - tvSeenAt < 7000;
+function renderTvStatus() {
+  const el = $('#tv-status');
+  const ok = tvConnected();
+  el.className = `tv-status ${ok ? 'ok' : 'off'}`;
+  el.textContent = ok ? '📺 TV connected' : '📺 TV not connected';
+  el.title = ok
+    ? 'A TV window is open in this browser and receiving updates.'
+    : `No TV window is listening. Open it with “Open TV window”, from the same address (${location.origin}) and the same browser — not a private window.`;
+}
+store.onMessage((msg) => {
+  if (msg.type === 'tv-beat' && !msg.preview) {
+    const wasConnected = tvConnected();
+    tvSeenAt = Date.now();
+    if (!wasConnected) renderTvStatus();
+  }
+});
+setInterval(() => {
+  store.post({ type: 'admin-beat', at: Date.now() });
+  renderTvStatus();
+}, 2000);
+store.post({ type: 'admin-beat', at: Date.now() });
 
 setInterval(renderSaved, 1000);
 navigator.storage?.persist?.().catch(() => {});

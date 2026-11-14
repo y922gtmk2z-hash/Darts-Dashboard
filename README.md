@@ -39,6 +39,7 @@ The TV acts as a second monitor. The admin page stays on the laptop and the TV s
 3. Open **admin.html** on the laptop and click **📺 Open TV window**. If nothing opens, allow pop-ups for the site.
 4. Drag the new window onto the TV and **click once inside it** (or press `F`) to go full screen. The cursor hides itself.
 5. Click back on the admin window on the laptop and start scoring.
+6. Check the top of the admin page says **📺 TV connected** in green. If it says *TV not connected*, the TV window isn't receiving updates (see *TV not updating* below).
 
 ### Option B: Mirroring or casting only
 
@@ -61,9 +62,9 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 ## 3. Running the night: cheat-sheet
 
 **Before people arrive**
-1. Open **admin.html** and check the **Settings** tab: title, venue, best-of, points, once or twice.
+1. Open **admin.html** and check the **Settings** tab: title, venue, best-of, points, once or twice. The JWI logo is shown on the TV by default (you can turn it off there).
 2. **Teams** tab: add teams one by one, or paste a list with one team per line (`Team name: Player A & Player B`).
-3. Open the TV window and put it on the TV. It shows the title and the registered teams.
+3. Open the TV window and put it on the TV. It shows the logo and the registered teams. Check the admin page says **📺 TV connected**.
 4. Click **Generate fixtures & start league**, or **…start with an empty fixture list** to set every match yourself. After this, teams can be renamed but not added or removed.
 
 **Setting the fixtures yourself** (Fixtures tab, any time during the league)
@@ -83,7 +84,7 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 - Add a leg with the big **+ Leg** button or the keyboard. Take one off with **−**.
 - When a side reaches the winning number of legs, a box pops up. Press **Enter** to finish the match, or choose **Undo last leg**.
 - Mistake? Press **Ctrl+Z** (or **↶ Undo**). To correct an older result, go to **Fixtures → Edit**.
-- Need a different order? Go to **Fixtures** and use **↑ ↓** or **Play next**.
+- Need a different order? Go to **Fixtures** and use **↑ ↓** or **Play next**. The team filter there shows one team's matches.
 
 | Key | Action |
 | --- | --- |
@@ -93,12 +94,13 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 | `Ctrl` + `Z` | Undo the last change |
 | `Enter` / `Esc` | In the "win" box: finish the match / keep it open |
 
-You can change these keys in **Settings**. They only work on the Live scoring tab, and not while you're typing in a box.
+You can change these keys in **Settings**. They work on every tab, as long as you're not typing in a box. On any tab other than Live scoring, a small message confirms the new score.
 
 **Knockout**
 1. When the last league match finishes, click **Start knockout…**.
 2. Check the seeds (1st v 4th, 2nd v 3rd). If 4th and 5th are level on every tiebreaker you'll see a warning. Settle it how you like, then pick the team.
 3. Play the semi-finals. The winners go into the final automatically.
+   - If the 3rd-place play-off is on, the **final waits** until it's finished so the final is played on its own. To play both at once, untick *Play the final on its own* in **Settings**.
 4. When the final finishes, the TV shows the **champion screen**. Click **Download final backup**.
 
 **Table order:** points → leg difference → legs won → head-to-head → name.
@@ -111,6 +113,8 @@ Browser storage can be cleared, so take backups.
 
 - **⬇ Backup** (top right) downloads a `.json` file of the whole tournament. Do this at least at half-time and at the end.
 - On the **Backup & recovery** tab, tick **"Download a backup automatically after every finished match"**. It is the safest option for the night.
+  - The first time, Chrome asks whether the site may **download multiple files**. Click **Allow**.
+  - Expect one small file per match in your Downloads folder. Only the newest one matters.
 - The **"✓ Saved …"** indicator at the top shows the last save. If it turns red and says **Not saved**, export a backup and switch to a normal (non-private) window.
 
 **If something goes wrong**
@@ -121,7 +125,9 @@ Browser storage can be cleared, so take backups.
 | A result entered wrongly long ago | **Fixtures → Edit** (or **Un-play** to put it back in the queue) |
 | Browser closed or laptop restarted | Just reopen both pages. Everything reloads from storage |
 | Storage wiped or a new laptop | **Backup & recovery → Import JSON backup** and choose your latest file |
-| TV not updating | Make sure both windows are in the same browser and on the same address, and not private. Refreshing the TV is always safe |
+| TV not updating / admin says **TV not connected** | Both windows must be in the same browser, on exactly the same address (the TV's waiting screen shows it), and not private. Reopen it with **📺 Open TV window**. Refreshing the TV is always safe |
+| TV shows **Not connected to the admin window** (small, bottom right) | The admin window is closed or in another browser. Reopen admin.html in the same browser |
+| Import says **This backup has problems** | The file is damaged or was edited. Nothing was changed. Import an earlier backup file |
 | "Admin is open in another window" | Close the extra admin tab and only score from one |
 
 ---
@@ -135,7 +141,18 @@ Open **Settings → Rehearsal** on a test run. Export a backup first if you alre
 - **▶ Auto-play** scores a leg every second or so, so you can watch the TV react live.
 - When you're done, go to **Backup & recovery → Reset tournament**, keeping teams and settings or not.
 
-Also worth trying once: open both windows, refresh the TV, close and reopen the browser, and check that everything comes back.
+### Pre-night checklist on the real laptop and TV
+
+These can't be tested automatically, so do them once on the actual equipment:
+
+- [ ] TV window full screen on the TV, admin on the laptop, and admin shows **📺 TV connected**.
+- [ ] If casting, only the TV window or tab is shared. Check from across the room that no admin controls are visible.
+- [ ] Leave both untouched for 15 minutes: the laptop and TV don't sleep, and the screensaver doesn't start.
+- [ ] Score a few legs with the keyboard and confirm the TV updates instantly.
+- [ ] Refresh the TV, then close and reopen the browser. Everything comes back.
+- [ ] Turn wifi off and refresh both windows. They still load and still sync.
+- [ ] Download a backup, then import it again.
+- [ ] Reset the tournament (keep teams if they're real) before people arrive.
 
 ---
 
@@ -163,7 +180,8 @@ The TV is designed for 1920×1080. On other screen shapes it scales down and add
 | League | Every team plays every other team **twice** (or once) |
 | Best of | League **3**, semi-finals **3**, final **3**, 3rd place **3** |
 | Points | Win **3**, loss **0** |
-| Knockout | Top 4: 1st v 4th, 2nd v 3rd, then the final. 3rd-place play-off off |
+| Knockout | Top 4: 1st v 4th, 2nd v 3rd, then the final. 3rd-place play-off off. The final is played on its own |
+| Branding | Title *James Watkins Invitational*, JWI logo on the TV (both changeable) |
 | Boards | 2 ("Board 1", "Board 2"; can be renamed) |
 
 Once/twice can only change before the league starts. A best-of value can change until the first match of that stage starts.
@@ -179,11 +197,17 @@ js/store.js              data layer: get / set / subscribe, localStorage + Broad
 js/view.js               shared HTML helpers
 js/tv.js, js/admin.js    the two pages
 css/                     base, tv, admin styles
+img/                     JWI logo (transparent PNG) and app icon
 sw.js                    offline cache (update the ASSETS list when adding files; a test checks this)
-tests/                   node --test, no dependencies
+tests/                   node --test unit tests, no dependencies
+tests/e2e/               browser tests (admin + TV together), need Playwright
+.github/workflows/       runs both test suites on every push to main and every pull request
 ```
 
-- Run the tests with `node --test` (or `npm test`). Node 18+ is needed and nothing has to be installed.
+- Run the unit tests with `node --test` (or `npm test`). Node 18+ is needed and nothing has to be installed.
+- Run the browser tests with `npm run test:e2e`. They start their own web server and need Playwright: `npm install --no-save playwright && npx playwright install chromium`. Without Playwright they're skipped.
+  - They cover admin→TV sync, the TV-connected indicator, recovery after refresh, keyboard scoring from any tab, finishing a match, the final waiting for the 3rd-place match, refusing a bad backup, manual fixtures, a TV opened from the wrong address, offline reload, and a layout guard that nothing spills off the 1920×1080 TV at 4, 8 or 16 teams in every phase.
+- The unit tests include random sequences of organiser actions that must never break the tournament's rules: one match per board, no team on two boards, valid scores, and a valid state at every step.
 - **Data model:** a single tournament object `{config, phase, teams[], fixtures[], seeds}`. Standings and the bracket are always derived and never stored.
 - **Adding remote scoring later:** write another adapter with the same shape as `createLocalStorageAdapter` in `js/store.js` (`load`, `save`, `listen`, `broadcast`…), for example backed by Firebase, and pass it to `createStore`. Nothing else needs to change.
 - After changing cached files, bump `VERSION` in `sw.js` so browsers pick up the new version promptly.

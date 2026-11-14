@@ -135,9 +135,10 @@ function render({ transition = false, changes = null } = {}) {
 
 function waitingScreen() {
   return `<div class="waiting-screen">
-    <div class="big-dart">🎯</div>
+    <img class="waiting-logo" src="img/logo.png" alt="James Watkins Invitational">
     <h1>Waiting for the organiser…</h1>
-    <p>Open <strong>admin.html</strong> in another window of this browser on this laptop. This screen updates by itself.</p>
+    <p>Open <strong>admin.html</strong> in another window of <strong>this browser</strong> on this laptop. This screen updates by itself.</p>
+    <p class="origin">The admin page must use the same address: <strong>${esc(location.origin)}</strong> — and not a private window.</p>
   </div>`;
 }
 
@@ -151,7 +152,7 @@ function header(s) {
   const pct = s.phase === 'league' && total ? Math.round((played / total) * 100) : s.phase === 'setup' ? 0 : 100;
   return `<header class="tv-head">
     <div class="tv-title">
-      <span class="dart-logo">🎯</span>
+      ${s.config.showLogo ? '<img class="head-logo" src="img/logo.png" alt="">' : '<span class="dart-logo">🎯</span>'}
       <div><h1>${esc(s.config.title)}</h1>${s.config.subtitle ? `<p>${esc(s.config.subtitle)}</p>` : ''}</div>
     </div>
     <div class="tv-phase">
@@ -175,6 +176,9 @@ function body(s, view, ch) {
   }
 }
 
+/** The logo already spells out the tournament name, so don't repeat it next to the logo. */
+const logoSaysTitle = (s) => s.config.showLogo && /james\s+watkins\s+invitational/i.test(s.config.title);
+
 const panelTitle = (t, extra = '') => `<h2 class="panel-title">${esc(t)}${extra}</h2>`;
 
 // ---------- setup
@@ -184,8 +188,8 @@ function setupView(s) {
   const cols = n > 12 ? 4 : n > 6 ? 3 : 2;
   return `<section class="setup">
     <div class="setup-hero">
-      <div class="eyebrow">Doubles darts</div>
-      <h2>${esc(s.config.title)}</h2>
+      ${s.config.showLogo ? `<img class="hero-logo" src="img/logo.png" alt="${esc(s.config.title)}">` : '<div class="eyebrow">Doubles darts</div>'}
+      ${logoSaysTitle(s) ? '' : `<h2 class="${s.config.showLogo ? 'with-logo' : ''}">${esc(s.config.title)}</h2>`}
       ${s.config.subtitle ? `<p class="sub">${esc(s.config.subtitle)}</p>` : ''}
       <p class="rules">${s.config.doubleRoundRobin ? 'Everyone plays everyone twice' : 'Everyone plays everyone once'} · best of ${s.config.bestOf.league} legs · top 4 to the semi-finals</p>
     </div>
@@ -382,8 +386,9 @@ function championView(s) {
   const players = playersText(s, champ);
   const score = f ? `${Math.max(f.homeLegs, f.awayLegs)}–${Math.min(f.homeLegs, f.awayLegs)}` : '';
   return `<section class="champion">
-    <div class="ch-eyebrow">${esc(s.config.title)} · Champions</div>
-    <div class="ch-trophy">🏆</div>
+    ${s.config.showLogo
+      ? `<img class="ch-logo" src="img/logo.png" alt=""><div class="ch-eyebrow">${logoSaysTitle(s) ? '' : `${esc(s.config.title)} · `}Champions</div>`
+      : `<div class="ch-eyebrow">${esc(s.config.title)} · Champions</div><div class="ch-trophy">🏆</div>`}
     <h2 class="ch-name">${esc(T.teamName(s, champ))}</h2>
     ${players ? `<p class="ch-players">${esc(players)}</p>` : ''}
     <p class="ch-final">beat <strong>${esc(T.teamName(s, v.runnerUpId))}</strong> <span class="num">${score}</span> in the final</p>
@@ -519,6 +524,26 @@ if (!PREVIEW) {
 } else {
   document.body.classList.add('preview', 'no-cursor');
 }
+
+// ---------------------------------------------------------------- presence
+// Tell the admin window we're here; notice if the admin window goes quiet.
+let adminSeenAt = 0;
+store.onMessage((msg) => {
+  if (msg.type === 'admin-beat') {
+    adminSeenAt = Date.now();
+    updateLink();
+  }
+});
+function updateLink() {
+  const badge = $('#link-badge');
+  if (!badge || PREVIEW) return;
+  // Only warn once the page has had time to hear from the admin window.
+  const quiet = Date.now() - adminSeenAt > 10000 && performance.now() > 10000;
+  badge.hidden = !quiet;
+}
+const beat = () => store.post({ type: 'tv-beat', at: Date.now(), preview: PREVIEW });
+beat();
+setInterval(() => { beat(); updateLink(); }, 2000);
 
 // ---------------------------------------------------------------- go
 

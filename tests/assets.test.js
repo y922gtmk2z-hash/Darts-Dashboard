@@ -12,7 +12,7 @@ const walk = (dir) => readdirSync(dir).flatMap((f) => {
 
 test('service worker pre-caches every page, script and stylesheet', () => {
   const sw = readFileSync(join(root, 'sw.js'), 'utf8');
-  const files = [...walk(join(root, 'js')), ...walk(join(root, 'css'))].map((p) => `./${relative(root, p)}`);
+  const files = [...walk(join(root, 'js')), ...walk(join(root, 'css')), ...walk(join(root, 'img'))].map((p) => `./${relative(root, p)}`);
   files.push('./index.html', './admin.html');
   for (const f of files) assert.ok(sw.includes(`'${f}'`), `${f} missing from sw.js ASSETS`);
 });
