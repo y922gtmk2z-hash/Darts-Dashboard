@@ -200,7 +200,7 @@ test('reset keeps teams and settings by default', () => {
   assert.notEqual(r.id, s.id);
   const empty = T.resetTournament(s, { keepTeams: false, keepConfig: false });
   assert.equal(empty.teams.length, 0);
-  assert.equal(empty.config.title, 'Doubles Darts Tournament');
+  assert.equal(empty.config.title, 'James Watkins Invitational');
 });
 
 for (const n of [4, 5, 7, 8, 9, 12, 16]) {

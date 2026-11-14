@@ -63,6 +63,57 @@ export function normalizeState(raw) {
   };
 }
 
+/**
+ * Consistency check for a normalised state (used before importing a backup).
+ * Returns a list of human-readable problems; empty means it is safe to use.
+ */
+export function validateState(state) {
+  const problems = [];
+  const teamIds = new Set();
+  for (const t of state.teams) {
+    if (teamIds.has(t.id)) problems.push(`Team id “${t.id}” is used twice.`);
+    teamIds.add(t.id);
+  }
+  const names = new Set();
+  for (const t of state.teams) {
+    const n = t.name.toLowerCase();
+    if (names.has(n)) problems.push(`Two teams are called “${t.name}”.`);
+    names.add(n);
+  }
+  const fixtureIds = new Set();
+  const boards = new Map();
+  const playing = new Map();
+  for (const f of state.fixtures) {
+    const label = `Match ${f.id}`;
+    if (fixtureIds.has(f.id)) problems.push(`${label} appears twice.`);
+    fixtureIds.add(f.id);
+    for (const id of [f.homeId, f.awayId]) {
+      if (id !== null && !teamIds.has(id)) problems.push(`${label} refers to a team that doesn't exist.`);
+    }
+    if (f.homeId && f.homeId === f.awayId) problems.push(`${label} has a team playing itself.`);
+    if (f.status !== 'scheduled' && (!f.homeId || !f.awayId)) problems.push(`${label} has started but its teams are not known.`);
+    const need = legsToWinFor(state.config, f.stage);
+    if (f.homeLegs > need || f.awayLegs > need) problems.push(`${label} has more legs than best of ${state.config.bestOf[f.stage]} allows.`);
+    if (f.status === 'done' && !isDecided(f, state.config)) problems.push(`${label} is finished but has no winner (${f.homeLegs}–${f.awayLegs}).`);
+    if (f.status === 'live') {
+      if (f.board !== 1 && f.board !== 2) problems.push(`${label} is live but not on a board.`);
+      else if (boards.has(f.board)) problems.push(`Two matches are live on board ${f.board}.`);
+      else boards.set(f.board, f.id);
+      for (const id of [f.homeId, f.awayId]) {
+        if (playing.has(id)) problems.push(`A team is live in two matches at once.`);
+        playing.set(id, f.id);
+      }
+    }
+  }
+  const ko = state.fixtures.filter((f) => f.stage !== 'league');
+  if ((state.phase === 'knockout' || state.phase === 'complete') && !ko.some((f) => f.id === 'SF1')) {
+    problems.push(`Phase is “${state.phase}” but there are no semi-finals.`);
+  }
+  if (state.phase === 'setup' && state.fixtures.length) problems.push('Phase is “setup” but fixtures exist.');
+  if (state.seeds && state.seeds.some((id) => !teamIds.has(id))) problems.push('Knockout seeds refer to unknown teams.');
+  return [...new Set(problems)];
+}
+
 function normalizePlayers(p) {
   if (!Array.isArray(p)) return ['', ''];
   return [String(p[0] ?? '').slice(0, 40), String(p[1] ?? '').slice(0, 40)];
@@ -118,6 +169,7 @@ export function nextUp(state) {
     const pick = queue.find(
       (f) =>
         !taken.has(f.id) &&
+        !finalMustWait(state, f, taken) &&
         ![f.homeId, f.awayId].some((t) => busyElsewhere.has(t) || reserved.has(t)),
     );
     if (pick) {
@@ -127,6 +179,16 @@ export function nextUp(state) {
     }
   }
   return result;
+}
+
+/**
+ * With config.finalAlone the final only starts once every other knockout
+ * match is finished, so it gets the room's full attention. `alsoTaken` lets
+ * nextUp treat matches it has just suggested as occupying a board.
+ */
+export function finalMustWait(state, f, alsoTaken = new Set()) {
+  if (f.stage !== 'final' || !state.config.finalAlone) return false;
+  return state.fixtures.some((x) => x.stage !== 'league' && x.id !== f.id && (x.status !== 'done' || alsoTaken.has(x.id)));
 }
 
 export function matchWinnerId(f) {
@@ -531,6 +593,7 @@ export function startMatch(state, id, board) {
   if (onBoard) fail(`${state.config.boardNames[board - 1]} is busy.`);
   const busy = new Set(liveFixtures(state).flatMap((x) => [x.homeId, x.awayId]));
   if (busy.has(f.homeId) || busy.has(f.awayId)) fail('One of these teams is already playing.');
+  if (finalMustWait(state, f)) fail('The final is played on its own — finish the other matches first (or turn this off in Settings).');
   return mutate(state, (s) => {
     const m = getFixture(s, id);
     Object.assign(m, { status: 'live', board, homeLegs: 0, awayLegs: 0, startedAt: Date.now(), finishedAt: null });

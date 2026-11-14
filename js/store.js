@@ -12,6 +12,7 @@
 //   listen(onState, onHello): void receive states / "hello" requests from other windows
 //   broadcast(state): void
 //   hello(): void                  ask other windows for their state
+//   post(msg): void                small non-state messages (presence heartbeats)
 
 export const STORAGE_KEY = 'dartsDashboard.state.v1';
 export const HISTORY_KEY = 'dartsDashboard.history.v1';
@@ -81,13 +82,21 @@ export function createLocalStorageAdapter({
     announceAdmin(id) {
       try { channel?.postMessage({ type: 'admin', id }); } catch { /* ignore */ }
     },
-    listen(onState, onHello, onAdmin) {
+    close() {
+      try { channel?.close(); } catch { /* ignore */ }
+    },
+    /** Any other small message between windows (e.g. presence heartbeats). */
+    post(msg) {
+      try { channel?.postMessage(msg); } catch { /* ignore */ }
+    },
+    listen(onState, onHello, onAdmin, onMessage) {
       if (channel) {
         channel.addEventListener('message', (e) => {
           const msg = e.data;
           if (msg?.type === 'state') onState(msg.state);
           else if (msg?.type === 'hello') onHello?.();
           else if (msg?.type === 'admin') onAdmin?.(msg.id);
+          else if (msg && typeof msg.type === 'string') onMessage?.(msg);
         });
       }
       globalThis.addEventListener?.('storage', (e) => {
@@ -111,6 +120,7 @@ export function createMemoryAdapter() {
     broadcast() {},
     hello() {},
     announceAdmin() {},
+    post() {},
     listen() {},
   };
 }
@@ -128,6 +138,7 @@ export function createStore({ adapter, normalize = (x) => x, readOnly = false } 
   const subs = new Set();
   const instanceId = Math.random().toString(36).slice(2);
   const seenAdmins = new Set();
+  const messageSubs = new Set();
 
   const emit = (meta) => {
     for (const fn of subs) {
@@ -178,6 +189,11 @@ export function createStore({ adapter, normalize = (x) => x, readOnly = false } 
       }
       emit({ source: 'other-admin' });
     },
+    (msg) => {
+      for (const fn of messageSubs) {
+        try { fn(msg); } catch (e) { console.error(e); }
+      }
+    },
   );
 
   if (readOnly) adapter.hello();
@@ -200,6 +216,14 @@ export function createStore({ adapter, normalize = (x) => x, readOnly = false } 
       return popped.label;
     },
     canUndo: () => history.length >= 2,
+    /** Send / receive small non-state messages to other windows (presence etc.). */
+    post: (msg) => adapter.post?.(msg),
+    /** Stop listening to other windows (tests; the browser does this on unload). */
+    close: () => adapter.close?.(),
+    onMessage(fn) {
+      messageSubs.add(fn);
+      return () => messageSubs.delete(fn);
+    },
     history: () => history.slice(),
     restore(index) {
       const h = history[index];
