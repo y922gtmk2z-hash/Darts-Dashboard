@@ -352,6 +352,25 @@ test('before the league starts, Settings explains why the TV is not rotating yet
   await ctx.close();
 });
 
+test('live scores stay along the bottom of every other TV screen and update with each leg', { skip }, async () => {
+  const base0 = leagueState(8, 20);
+  const id = T.nextUp(base0)[1].id;
+  const s = T.startMatch(base0, id, 1);
+  const { ctx, admin, tv, errors } = await openPair({ state: s });
+  await tv.waitForSelector('.live-card:not(.idle)');
+  assert.equal(await tv.locator('.live-strip').count(), 0); // the live screen already shows the boards
+  await tv.goto(`${base}/index.html?view=chart`);
+  await tv.waitForSelector('.live-strip .ls-slot:not(.idle)');
+  assert.equal(await tv.textContent(`.live-strip [data-legs="${id}-home"]`), '0');
+  await admin.click('.kbd-help');
+  await admin.keyboard.press('q');
+  await tv.waitForFunction((fid) => document.querySelector(`.live-strip [data-legs="${fid}-home"]`)?.textContent === '1', id);
+  // The free board shows what's next.
+  assert.match(await tv.textContent('.live-strip .ls-slot.idle'), /Next up|Free/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the final waits for the 3rd place play-off', { skip }, async () => {
   let s = loadDemoTeams(T.createTournament({ thirdPlace: true }), 4);
   s = simulateUntil(s, (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done'), seededRandom(5));

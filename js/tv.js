@@ -146,7 +146,7 @@ function render({ transition = false, changes = null } = {}) {
         el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 1100, easing: 'cubic-bezier(.2,.8,.2,1)' });
       }
     }
-    for (const id of ch.bumps) $(`[data-legs="${id}"]`, stage)?.classList.add('bump');
+    for (const id of ch.bumps) for (const el of $$(`[data-legs="${id}"]`, stage)) el.classList.add('bump');
   }
   updateClock();
   confetti.toggle(s.phase === 'complete' && view === 'auto');
@@ -182,14 +182,24 @@ function header(s) {
   </header>`;
 }
 
+// Height the live strip takes from the other screens (strip + gap).
+const STRIP_H = 142;
+
 function body(s, view, ch) {
   if (s.phase === 'setup') return setupView(s);
+  if (view === 'auto') return viewBody(s, view, ch, false);
+  // Every other screen (rotating or pinned) keeps the live scores along the bottom.
+  const strip = T.liveFixtures(s).length > 0;
+  return viewBody(s, view, ch, strip) + (strip ? liveStripHTML(s) : '');
+}
+
+function viewBody(s, view, ch, strip) {
   switch (view) {
-    case 'table': return `<section class="panel full">${panelTitle('League table')}${tableHTML(s, ch.rows, { full: true })}</section>`;
+    case 'table': return `<section class="panel full">${panelTitle('League table')}${tableHTML(s, ch.rows, { full: true, avail: 790 - (strip ? STRIP_H : 0) })}</section>`;
     case 'fixtures': return fixturesView(s, ch);
     case 'chart': return `<section class="panel full">${panelTitle('Race for the top', `<span class="hint">League position after each match · top ${s.config.qualifiers} highlighted</span>`)}${positionChartHTML(s)}</section>`;
-    case 'grid': return `<section class="panel full">${panelTitle('Head to head', '<span class="hint">Read across: the row team’s score first</span>')}${gridHTML(s, ch.rows)}</section>`;
-    case 'stats': return statsView(s);
+    case 'grid': return `<section class="panel full">${panelTitle('Head to head', '<span class="hint">Read across: the row team’s score first</span>')}${gridHTML(s, ch.rows, strip ? STRIP_H : 0)}</section>`;
+    case 'stats': return statsView(s, strip);
     case 'bracket': return `<section class="panel full">${panelTitle(s.phase === 'league' ? 'Knockout · if the league ended now' : 'Knockout')}${bracketHTML(s, ch.rows)}</section>`;
     default:
       if (s.phase === 'league') return leagueView(s, ch);
@@ -263,6 +273,30 @@ function liveCard(s, board, suggested, ch, waiting = false) {
     </div>
     ${stakesHTML(s, f)}
   </article>`;
+}
+
+/** Live scores along the bottom of the non-live screens: one slot per board. */
+function liveStripHTML(s) {
+  const next = T.nextUp(s);
+  const slot = (board) => {
+    const name = esc(s.config.boardNames[board - 1]);
+    const f = T.liveOnBoard(s, board);
+    if (!f) {
+      const n = next[board] ?? next.waiting?.[board];
+      return `<div class="ls-slot idle"><span class="ls-board">${name}</span>
+        <span class="ls-idle">${n ? `Next up: <strong>${esc(slotName(s, n, 'home'))}</strong> v <strong>${esc(slotName(s, n, 'away'))}</strong>` : 'Free'}</span></div>`;
+    }
+    const lead = f.homeLegs === f.awayLegs ? '' : f.homeLegs > f.awayLegs ? 'home' : 'away';
+    const stake = I.matchStakes(s, f).lines[0];
+    return `<div class="ls-slot"><span class="ls-board">${name}<i>● LIVE</i></span>
+      <div class="ls-main">
+        <span class="ls-team h ${lead === 'home' ? 'lead' : ''}">${esc(slotName(s, f, 'home'))}</span>
+        <span class="ls-score num"><b data-legs="${f.id}-home">${f.homeLegs}</b>–<b data-legs="${f.id}-away">${f.awayLegs}</b></span>
+        <span class="ls-team a ${lead === 'away' ? 'lead' : ''}">${esc(slotName(s, f, 'away'))}</span>
+      </div>
+      <span class="ls-sub">${esc(stake ?? stageName(f))}</span></div>`;
+  };
+  return `<section class="live-strip">${slot(1)}${slot(2)}</section>`;
 }
 
 /** "What's at stake" line under a live match (falls back to the match format). */
@@ -501,11 +535,11 @@ function positionChartHTML(s) {
 
 // ---------- head-to-head grid
 
-function gridHTML(s, rows) {
+function gridHTML(s, rows, less = 0) {
   const h2h = I.headToHead(s);
   const ids = rows.map((r) => r.teamId);
   const n = ids.length;
-  const rowH = Math.min(90, Math.floor((750 - (n + 2) * 4) / (n + 0.7))); // rows + header + spacing fit the panel
+  const rowH = Math.min(90, Math.floor((750 - less - (n + 2) * 4) / (n + 0.7))); // rows + header + spacing fit the panel
   const cell = (a, b) => {
     if (a === b) return '<td class="self"></td>';
     const list = h2h.get(`${a}|${b}`) ?? [];
@@ -526,7 +560,8 @@ function gridHTML(s, rows) {
 
 // ---------- stats: averages, streaks and records
 
-function statsView(s) {
+function statsView(s, strip = false) {
+  const few = strip ? 2 : 3; // the live strip takes the room of one entry per list
   const a = I.averagesBoard(s);
   const r = I.records(s);
   const name = (id) => esc(T.teamName(s, id));
@@ -537,8 +572,8 @@ function statsView(s) {
     <ol class="bars">${a.season.map((x, i) => `<li><span class="rk">${i + 1}</span><span class="nm">${name(x.teamId)}</span>
       <span class="bar"><i style="width:${((x.avg / max) * 100).toFixed(1)}%"></i></span><b class="num">${fmtAvg(x.avg)}</b><em>${x.count} match${x.count === 1 ? '' : 'es'}</em></li>`).join('')}</ol>
     <h3>Best single match</h3>
-    <ol class="facts">${a.bestMatch.slice(0, 3).map((x) => `<li><b class="num">${fmtAvg(x.avg)}</b><span>${name(x.teamId)} <em>v ${vsOf(x.fixture, x.teamId)} · ${esc(stageName(x.fixture, { short: true }))}</em></span></li>`).join('')}</ol>
-    ${a.improved.length ? `<h3>On the up</h3><ol class="facts">${a.improved.map((x) => `<li><b class="num up">+${x.change.toFixed(1)}</b><span>${name(x.teamId)} <em>last 3: ${fmtAvg(x.recent)} · before: ${fmtAvg(x.earlier)}</em></span></li>`).join('')}</ol>` : ''}`;
+    <ol class="facts">${a.bestMatch.slice(0, few).map((x) => `<li><b class="num">${fmtAvg(x.avg)}</b><span>${name(x.teamId)} <em>v ${vsOf(x.fixture, x.teamId)} · ${esc(stageName(x.fixture, { short: true }))}</em></span></li>`).join('')}</ol>
+    ${a.improved.length ? `<h3>On the up</h3><ol class="facts">${a.improved.slice(0, few).map((x) => `<li><b class="num up">+${x.change.toFixed(1)}</b><span>${name(x.teamId)} <em>last 3: ${fmtAvg(x.recent)} · before: ${fmtAvg(x.earlier)}</em></span></li>`).join('')}</ol>` : ''}`;
   const up = r.upset;
   const recPanel = `
     <ol class="facts big">
