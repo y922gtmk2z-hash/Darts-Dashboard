@@ -5,7 +5,7 @@ import { knockoutSeeding, bracketView, winnerOf } from './logic/bracket.js';
 import { legsToWinFor, bestOfFor, MIN_TEAMS, MAX_TEAMS } from './logic/config.js';
 import { loadDemoTeams, simulateStep, simulateMatch, simulateUntil } from './logic/simulate.js';
 import {
-  esc, stageName, slotName, playersText, teamText, teamBlock, slotBlock, formatLine, legsFormat, phaseLabel, timeAgo, applyTheme, registerServiceWorker,
+  esc, stageName, slotName, playersText, teamText, teamBlock, slotBlock, fmtAvg, formatLine, legsFormat, phaseLabel, timeAgo, applyTheme, registerServiceWorker,
 } from './view.js';
 
 const LONG_NAME = 24; // longer team names get shortened with … on parts of the TV
@@ -199,28 +199,59 @@ async function promptFinish(id) {
   const s = S();
   const f = T.fixtureById(s, id);
   const winner = slotName(s, f, f.homeLegs > f.awayLegs ? 'home' : 'away');
+  let averages = null;
   const v = await ask({
     title: `${s.config.boardNames[f.board - 1]}: ${winner} win!`,
     body: `<p class="dlg-score"><strong>${slotBlock(s, f, 'home', { cls: 'end' })}</strong> <span class="num">${f.homeLegs} – ${f.awayLegs}</span> <strong>${slotBlock(s, f, 'away')}</strong></p>
+           ${averageInputs(s, f)}
            <p class="muted">Finish the match and record the result? <kbd>Enter</kbd> finishes, <kbd>Esc</kbd> keeps it open.</p>`,
     buttons: [
       { label: 'Undo last leg', value: 'undo' },
       { label: 'Not yet', value: 'cancel' },
       { label: 'Finish match', value: 'finish', kind: 'primary', autofocus: true },
     ],
+    onSubmit(form, value) {
+      if (value !== 'finish') return true;
+      averages = readAverages(form);
+      return averages !== false;
+    },
   });
   finishOpen = false;
-  if (v === 'finish') finish(id);
+  if (v === 'finish') finish(id, averages);
   else if (v === 'undo') {
     const side = T.fixtureById(S(), id).homeLegs > T.fixtureById(S(), id).awayLegs ? 'home' : 'away';
     act('Leg removed', (st) => T.adjustLegs(st, id, side, -1));
   }
 }
 
-function finish(id) {
+/** Two "3-dart average" boxes for a dialog, prefilled from the match. */
+function averageInputs(s, f) {
+  const box = (side) => `<label class="avg-field">${slotBlock(s, f, side)}<span class="avg-label">3-dart average</span>
+      <input name="${side}Avg" inputmode="decimal" autocomplete="off" placeholder="e.g. 54.3" value="${esc(fmtAvg(f[`${side}Avg`]))}"></label>`;
+  return `<div class="avg-fields">${box('home')}${box('away')}</div>
+    <p class="muted small-text">Optional — leave blank if you didn't track it.</p>`;
+}
+
+/** {home, away} from averageInputs, or false (with a message) if one is invalid. */
+function readAverages(form) {
+  const out = {};
+  for (const side of ['home', 'away']) {
+    const v = T.parseAverage(form[`${side}Avg`].value);
+    if (Number.isNaN(v)) {
+      toast(`A 3-dart average must be a number from 0 to ${T.MAX_AVERAGE}, e.g. 54.3.`, 'error');
+      form[`${side}Avg`].focus();
+      return false;
+    }
+    out[side] = v;
+  }
+  return out;
+}
+
+function finish(id, averages = null) {
   const s = S();
   const f = T.fixtureById(s, id);
-  if (!act(`Finished ${stageName(f)}`, (st) => T.finishMatch(st, id))) return;
+  const withAverages = (st) => (averages ? T.setAverage(T.setAverage(st, id, 'home', averages.home ?? ''), id, 'away', averages.away ?? '') : st);
+  if (!act(`Finished ${stageName(f)}`, (st) => T.finishMatch(withAverages(st), id))) return;
   const done = T.fixtureById(S(), id);
   const winner = T.teamName(S(), winnerOf(done));
   toast(`${winner} win ${Math.max(done.homeLegs, done.awayLegs)}–${Math.min(done.homeLegs, done.awayLegs)}.`, 'success', {
@@ -275,6 +306,8 @@ function render() {
   const active = document.activeElement;
   const focusSel = active && $('#main').contains(active) ? focusSelector(active) : null;
   const sel = focusSel && active.id && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
+  // Text being typed (not yet committed with Enter / leaving the box) survives a redraw.
+  const typing = focusSel && active.id && /^(INPUT|TEXTAREA)$/.test(active.tagName) && active.type !== 'checkbox' ? active.value : null;
 
   const views = { live: viewLive, fixtures: viewFixtures, table: viewTable, teams: viewTeams, settings: viewSettings, backup: viewBackup };
   $('#main').innerHTML = (views[tab] ?? viewLive)(s);
@@ -282,6 +315,7 @@ function render() {
   if (focusSel) {
     const el = $(focusSel, $('#main'));
     if (el && !el.disabled) {
+      if (typing !== null && 'value' in el) el.value = typing;
       el.focus({ preventScroll: true });
       if (sel && 'setSelectionRange' in el) { try { el.setSelectionRange(...sel); } catch { /* ignore */ } }
     } else if (el || focusSel.includes('data-action')) {
@@ -391,6 +425,9 @@ function boardPanel(s, board, suggested) {
         <div class="players">${esc(playersText(s, id)) || '&nbsp;'}</div>
         <div class="legs num" data-legs="${f.id}-${which}">${legs}</div>
         <div class="pips">${Array.from({ length: need }, (_, i) => `<span class="${i < legs ? 'on' : ''}"></span>`).join('')}</div>
+        <label class="avg-live">3-dart avg
+          <input id="avg-${f.id}-${which}" data-change="avg" data-id="${f.id}" data-side="${which}" inputmode="decimal" autocomplete="off"
+            placeholder="–" value="${esc(fmtAvg(f[`${which}Avg`]))}" aria-label="3-dart average for ${esc(slotName(s, f, which))}"></label>
         <div class="leg-btns">
           <button class="minus" data-action="leg" data-id="${f.id}" data-side="${which}" data-delta="-1" ${legs === 0 ? 'disabled' : ''} aria-label="Remove a leg from ${esc(slotName(s, f, which))}">−</button>
           <button class="plus" data-action="leg" data-id="${f.id}" data-side="${which}" data-delta="1" ${decided ? 'disabled' : ''} aria-label="Leg to ${esc(slotName(s, f, which))}">+ Leg <kbd>${esc(key.toUpperCase())}</kbd></button>
@@ -501,7 +538,9 @@ function viewFixtures(s) {
 }
 
 function fixtureRow(s, f) {
-  const score = f.status === 'scheduled' ? '<span class="muted">–</span>' : `<span class="num">${f.homeLegs} – ${f.awayLegs}</span>`;
+  const avgs = f.homeAvg != null || f.awayAvg != null
+    ? `<span class="avg-under num" title="3-dart averages">${fmtAvg(f.homeAvg) || '–'} · ${fmtAvg(f.awayAvg) || '–'}</span>` : '';
+  const score = f.status === 'scheduled' ? '<span class="muted">–</span>' : `<span class="num">${f.homeLegs} – ${f.awayLegs}</span>${avgs}`;
   const w = winnerOf(f);
   let status;
   let actions = '';
@@ -632,11 +671,15 @@ async function editResultDialog(id) {
       <label>${slotBlock(s, f, 'home')}<select name="home" class="num">${opts(f.homeLegs)}</select></label>
       <span>–</span>
       <label>${slotBlock(s, f, 'away')}<select name="away" class="num">${opts(f.awayLegs)}</select></label>
-    </div><p class="muted">${legsFormat(bestOfFor(s.config, f.stage), { capital: true })}: the winner needs exactly ${need} leg${need === 1 ? '' : 's'}. The table updates instantly.</p>`,
+    </div><p class="muted">${legsFormat(bestOfFor(s.config, f.stage), { capital: true })}: the winner needs exactly ${need} leg${need === 1 ? '' : 's'}. The table updates instantly.</p>
+    ${averageInputs(s, f)}`,
     buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Save result', value: 'save', kind: 'primary', autofocus: true }],
     onSubmit(form) {
       try {
+        const averages = readAverages(form);
+        if (averages === false) return false;
         result = T.editResult(S(), id, Number(form.home.value), Number(form.away.value));
+        result = T.setAverage(T.setAverage(result, id, 'home', averages.home ?? ''), id, 'away', averages.away ?? '');
         return true;
       } catch (e) {
         toast(e.message, 'error');
@@ -654,17 +697,18 @@ async function editResultDialog(id) {
 
 function standingsTable(s, { compact = false } = {}) {
   const rows = T.standings(s);
+  const showAvg = rows.some((r) => r.avg !== null);
   const live = new Set(T.liveFixtures(s).filter((f) => f.stage === 'league').flatMap((f) => [f.homeId, f.awayId]));
   const q = s.config.qualifiers;
   return `<table class="standings ${compact ? 'compact' : ''}">
     <thead><tr><th>#</th><th>Team</th><th class="r">P</th><th class="r">W</th><th class="r">L</th>
-      ${compact ? '' : '<th class="r">LF</th><th class="r">LA</th>'}<th class="r">LD</th><th class="r">Pts</th>${compact ? '' : '<th>Form</th>'}</tr></thead>
+      ${compact ? '' : '<th class="r">LF</th><th class="r">LA</th>'}<th class="r">LD</th>${showAvg ? '<th class="r" title="Mean 3-dart average over league matches where it was recorded">Avg</th>' : ''}<th class="r">Pts</th>${compact ? '' : '<th>Form</th>'}</tr></thead>
     <tbody>${rows.map((r, i) => `<tr class="${i < q ? 'q' : ''} ${i === q - 1 ? 'cut' : ''}">
       <td class="num">${r.position}${r.tiedWithPrev ? '<span class="tie" title="Level on every tiebreaker — separated by name only">=</span>' : ''}</td>
       <td class="team-cell">${teamBlock(s, r.teamId, { inline: compact })}${live.has(r.teamId) ? ' <span class="dot-live" title="Playing now"></span>' : ''}</td>
       <td class="r num">${r.played}</td><td class="r num">${r.won}</td><td class="r num">${r.lost}</td>
       ${compact ? '' : `<td class="r num">${r.legsFor}</td><td class="r num">${r.legsAgainst}</td>`}
-      <td class="r num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td><td class="r num strong">${r.points}</td>
+      <td class="r num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="r num avg-col">${fmtAvg(r.avg) || '–'}</td>` : ''}<td class="r num strong">${r.points}</td>
       ${compact ? '' : `<td class="form">${r.form.map((x) => `<span class="${x}">${x}</span>`).join('')}</td>`}
     </tr>`).join('')}</tbody></table>`;
 }
@@ -1120,6 +1164,13 @@ const changes = {
     act('Changed shortcut', (s) => T.updateConfig(s, { keys: { [el.dataset.key]: v } }));
   },
   'fixture-team': (el) => { fixtureTeam = el.value; prefs.set('fixtureTeam', fixtureTeam); render(); },
+  avg: (el) => {
+    const side = el.dataset.side;
+    if (act('Recorded 3-dart average', (s) => T.setAverage(s, el.dataset.id, side, el.value))) return;
+    // Invalid: put the last valid value back and keep the cursor there to retype.
+    el.value = fmtAvg(T.fixtureById(S(), el.dataset.id)?.[`${side}Avg`]);
+    el.select();
+  },
   'start-pick': (el) => {
     if (el.value) act('Started match', (s) => T.startMatch(s, el.value, Number(el.dataset.board)));
   },

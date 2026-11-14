@@ -83,7 +83,9 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 **During the league** (Live scoring tab)
 - Each board shows its **Next up** match. Click **▶ Start on Board 1/2**, or pick a different one from the list.
 - Add a leg with the big **+ Leg** button or the keyboard. Take one off with **−**.
-- When a side reaches the winning number of legs, a box pops up. Press **Enter** to finish the match, or choose **Undo last leg**.
+- **3-dart averages (optional):** each team on a live board has a **3-dart avg** box. Type the average, e.g. `54.3` (a comma works too), then press Enter or click away. The TV shows it under the team straight away.
+- When a side reaches the winning number of legs, a box pops up showing both averages, so you can fill in or correct them. Press **Enter** to finish the match, or choose **Undo last leg**.
+- Averages can be changed later in **Fixtures → Edit**. Leave one blank if you didn't track it. The league table's **Avg** column (on the TV and admin) is each team's mean over the league matches where an average was recorded. It appears once the first average is entered.
 - Mistake? Press **Ctrl+Z** (or **↶ Undo**). To correct an older result, go to **Fixtures → Edit**.
 - Need a different order? Go to **Fixtures** and use **↑ ↓** or **Play next**. The team filter there shows one team's matches.
 

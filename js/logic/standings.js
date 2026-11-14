@@ -13,6 +13,9 @@ function emptyRow(team) {
     legDiff: 0,
     points: 0,
     form: [],
+    avg: null, // mean of the 3-dart averages recorded for this team's league matches
+    avgCount: 0,
+    avgSum: 0,
     h2hPoints: 0,
     h2hLegDiff: 0,
     position: 0,
@@ -51,12 +54,18 @@ export function computeStandings(teams, fixtures, config) {
       else row.lost++;
       row.points += won ? win : loss;
       row.form.push(won ? 'W' : 'L');
+      const avg = row === h ? f.homeAvg : f.awayAvg;
+      if (typeof avg === 'number') {
+        row.avgSum += avg;
+        row.avgCount++;
+      }
     }
   }
 
   const list = [...rows.values()];
   for (const r of list) {
     r.legDiff = r.legsFor - r.legsAgainst;
+    r.avg = r.avgCount ? Math.round((r.avgSum / r.avgCount) * 100) / 100 : null;
     r.form = r.form.slice(-5);
   }
   list.sort((a, b) => primary(a, b) || compareNames(a.name, b.name));

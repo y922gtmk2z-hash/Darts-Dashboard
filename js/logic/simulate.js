@@ -45,7 +45,13 @@ export function simulateStep(state, rand = Math.random) {
   }
   const live = T.liveFixtures(state);
   const decided = live.find((f) => T.matchIsDecided(state, f.id));
-  if (decided) return T.finishMatch(state, decided.id);
+  if (decided) {
+    let s = state;
+    for (const side of ['home', 'away']) {
+      if (decided[`${side}Avg`] == null) s = T.setAverage(s, decided.id, side, Math.round((35 + rand() * 45) * 10) / 10);
+    }
+    return T.finishMatch(s, decided.id);
+  }
 
   const next = T.nextUp(state);
   for (const board of [1, 2]) {

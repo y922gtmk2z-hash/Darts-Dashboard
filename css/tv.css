@@ -283,3 +283,18 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 .bm-team.win .who-players { color: color-mix(in srgb, var(--accent) 70%, var(--muted)); }
 .final-box .bm-team { height: auto; min-height: 92px; }
 .ch-podium em { display: block; font-style: normal; font-size: 20px; color: var(--muted); }
+
+/* ---------- 3-dart averages ---------- */
+.lc-avg { font-size: 20px; color: var(--muted); font-weight: 600; }
+.lc-avg b { color: var(--text); font-size: 26px; margin-left: 4px; }
+.live-row.compact .lc-avg, .live-row.stacked .lc-avg { font-size: 17px; }
+.live-row.compact .lc-avg b, .live-row.stacked .lc-avg b { font-size: 21px; }
+.tv-table th.avg-h { width: 120px; }
+.tv-table td.avg { color: #cfd6e4; }
+.tv-table.with-avg th { width: 62px; }
+.tv-table.with-avg th.pos { width: 56px; }
+.tv-table.with-avg th.team { width: auto; }
+.tv-table.with-avg th.avg-h { width: 112px; }
+.tv-table.with-avg th.pts { width: 84px; }
+.tv-table.with-avg th.form-h { width: 230px; }
+.tv-table.with-avg td { padding: 0 8px; }

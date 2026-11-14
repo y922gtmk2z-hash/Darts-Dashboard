@@ -28,6 +28,11 @@ export function playersText(state, id) {
   return p.filter(Boolean).join(' & ');
 }
 
+/** A 3-dart average for display: 54.3 → "54.30"; missing → "". */
+export function fmtAvg(n) {
+  return typeof n === 'number' && Number.isFinite(n) ? n.toFixed(2) : '';
+}
+
 /** Plain text for <option>s and messages: "Double Trouble (Sam Reid & Alex Moore)". */
 export function teamText(state, id, fallback = 'TBD') {
   const name = teamById(state, id)?.name ?? fallback;

@@ -359,3 +359,14 @@ fieldset.lengths label { margin-bottom: 0.6rem; }
 /* readable player names on the laptop screen */
 main .who-players { font-size: 0.8em; }
 .next-teams .who-players { font-size: 0.55em; }
+
+/* ---------- 3-dart averages ---------- */
+.avg-live { display: flex; align-items: center; gap: 0.45rem; margin: 0.15rem 0 0; font-size: 0.8rem; color: var(--muted); }
+.avg-live input { width: 6.2rem; min-height: 36px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.avg-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 0.8rem 0 0.2rem; }
+.avg-field { gap: 0.25rem; }
+.avg-field .who { color: var(--text); font-size: 0.95rem; }
+.avg-label { font-size: 0.78rem; }
+.avg-field input { font-size: 1.15rem; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+.avg-under { display: block; font-size: 0.75rem; color: var(--muted); }
+.avg-col { color: var(--muted); }

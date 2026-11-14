@@ -4,7 +4,7 @@ import { createStore, createLocalStorageAdapter } from './store.js';
 import * as T from './logic/tournament.js';
 import { bracketView, winnerOf, knockoutSeeding } from './logic/bracket.js';
 import { legsToWinFor } from './logic/config.js';
-import { esc, stageName, slotName, playersText, teamBlock, slotBlock, formatLine, legsFormat, applyTheme, registerServiceWorker } from './view.js';
+import { esc, stageName, slotName, playersText, teamBlock, slotBlock, fmtAvg, formatLine, legsFormat, applyTheme, registerServiceWorker } from './view.js';
 
 const W = 1920;
 const H = 1080;
@@ -230,6 +230,7 @@ function liveCard(s, board, suggested, ch) {
       <div class="lc-name">${esc(slotName(s, f, which))}</div>
       <div class="lc-players">${esc(playersText(s, id))}</div>
       <div class="lc-pips">${Array.from({ length: need }, (_, i) => `<i class="${i < legs ? 'on' : ''}"></i>`).join('')}</div>
+      ${f[`${which}Avg`] != null ? `<div class="lc-avg">3-dart avg <b class="num" data-avg="${f.id}-${which}">${fmtAvg(f[`${which}Avg`])}</b></div>` : ''}
     </div>`;
   };
   return `<article class="live-card">
@@ -274,8 +275,9 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
   const rowH = Math.max(28, Math.min(full ? 72 : 60, Math.floor(avail / Math.max(rows.length, 1))));
   const now = Date.now();
   const showForm = full;
-  return `<table class="tv-table" style="--row-h:${rowH}px">
-    <thead><tr><th class="pos">#</th><th class="team">Team</th><th>P</th><th>W</th><th>L</th><th>+/-</th><th class="pts">Pts</th>${showForm ? '<th class="form-h">Form</th>' : ''}</tr></thead>
+  const showAvg = rows.some((r) => r.avg !== null);
+  return `<table class="tv-table ${showAvg ? 'with-avg' : ''}" style="--row-h:${rowH}px">
+    <thead><tr><th class="pos">#</th><th class="team">Team</th><th>P</th><th>W</th><th>L</th><th>+/-</th>${showAvg ? '<th class="avg-h">Avg</th>' : ''}<th class="pts">Pts</th>${showForm ? '<th class="form-h">Form</th>' : ''}</tr></thead>
     <tbody>${rows.map((r, i) => {
       const mv = movement.get(r.teamId);
       const arrow = mv && mv.until > now ? `<span class="mv ${mv.dir}">${mv.dir === 'up' ? '▲' : '▼'}</span>` : '';
@@ -283,7 +285,7 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
         <td class="pos num">${r.position}</td>
         <td class="team">${teamBlock(s, r.teamId, { inline: rows.length > 10, cls: 'nm' })}${live.has(r.teamId) ? '<span class="live-dot"></span>' : ''}${arrow}</td>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.lost}</td>
-        <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>
+        <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="num avg">${fmtAvg(r.avg) || '–'}</td>` : ''}
         <td class="pts num">${r.points}</td>
         ${showForm ? `<td class="form">${r.form.map((x) => `<i class="${x}">${x}</i>`).join('')}</td>` : ''}
       </tr>`;

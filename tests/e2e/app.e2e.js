@@ -148,6 +148,33 @@ test('finishing from the keyboard: Enter confirms, result reaches the table', { 
   await ctx.close();
 });
 
+test('3-dart averages: typed on the live board, confirmed when finishing, shown on TV and in the table', { skip }, async () => {
+  const s = T.startMatch(leagueState(), 'L1', 1);
+  const { ctx, admin, tv, errors } = await openPair({ state: s });
+  await admin.fill('#avg-L1-home', '54,3');
+  await admin.press('#avg-L1-home', 'Enter');
+  await tv.waitForFunction(() => document.querySelector('[data-avg="L1-home"]')?.textContent === '54.30');
+  await admin.fill('#avg-L1-away', 'abc');
+  await admin.press('#avg-L1-away', 'Tab');
+  await admin.waitForSelector('.toast.error');
+  assert.equal(await admin.inputValue('#avg-L1-away'), '', 'invalid entry rolled back');
+  // Win the match; the finish box offers both averages (home prefilled).
+  await admin.click('body');
+  await admin.keyboard.press('q');
+  await admin.keyboard.press('q');
+  await admin.waitForSelector('dialog[open] input[name="awayAvg"]');
+  assert.equal(await admin.inputValue('dialog input[name="homeAvg"]'), '54.30');
+  await admin.fill('dialog input[name="awayAvg"]', '47.5');
+  await admin.press('dialog input[name="awayAvg"]', 'Enter');
+  await tv.waitForSelector('.tv-table .avg-h');
+  const stored = await admin.evaluate((k) => JSON.parse(localStorage.getItem(k)).fixtures.find((f) => f.id === 'L1'), KEY);
+  assert.deepEqual([stored.status, stored.homeAvg, stored.awayAvg], ['done', 54.3, 47.5]);
+  await admin.click('.tabs [data-tab="table"]');
+  assert.match(await admin.textContent('table.standings'), /54\.30/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the final waits for the 3rd place play-off', { skip }, async () => {
   let s = loadDemoTeams(T.createTournament({ thirdPlace: true }), 4);
   s = simulateUntil(s, (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done'), seededRandom(5));
@@ -217,11 +244,15 @@ for (const teams of [4, 8, 16]) {
     let x = s;
     for (const b of [1, 2]) {
       const n = T.nextUp(x)[b];
-      if (n) x = T.startMatch(x, n.id, b);
+      if (n) x = T.setAverage(T.setAverage(T.startMatch(x, n.id, b), n.id, 'home', '101.25'), n.id, 'away', '58.5');
     }
     return x;
   }]);
-  layoutCases.push([`${teams} teams · knockout`, () => simulateUntil(leagueState(teams), (x) => x.phase === 'knockout' && T.liveFixtures(x).length > 0, seededRandom(1))]);
+  layoutCases.push([`${teams} teams · knockout`, () => {
+    let x = simulateUntil(leagueState(teams), (y) => y.phase === 'knockout' && T.liveFixtures(y).length > 0, seededRandom(1));
+    for (const f of T.liveFixtures(x)) x = T.setAverage(T.setAverage(x, f.id, 'home', '77.7'), f.id, 'away', '180');
+    return x;
+  }]);
   layoutCases.push([`${teams} teams · complete`, () => simulateUntil(leagueState(teams), (x) => x.phase === 'complete', seededRandom(2))]);
 }
 

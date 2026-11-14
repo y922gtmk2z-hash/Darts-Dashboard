@@ -45,6 +45,8 @@ export function normalizeState(raw) {
       status: ['scheduled', 'live', 'done'].includes(f.status) ? f.status : 'scheduled',
       homeLegs: Math.max(0, Number(f.homeLegs) || 0),
       awayLegs: Math.max(0, Number(f.awayLegs) || 0),
+      homeAvg: storedAverage(f.homeAvg),
+      awayAvg: storedAverage(f.awayAvg),
       order: Number(f.order) || 0,
       startedAt: f.startedAt ?? null,
       finishedAt: f.finishedAt ?? null,
@@ -95,6 +97,11 @@ export function validateState(state) {
     const need = legsToWinFor(state.config, f.stage);
     if (f.homeLegs > need || f.awayLegs > need) problems.push(`${label} has more legs than best of ${state.config.bestOf[f.stage]} allows.`);
     if (f.status === 'done' && !isDecided(f, state.config)) problems.push(`${label} is finished but has no winner (${f.homeLegs}–${f.awayLegs}).`);
+    for (const k of ['homeAvg', 'awayAvg']) {
+      const v = f[k];
+      if (v !== null && v !== undefined && (typeof v !== 'number' || !(v >= 0 && v <= MAX_AVERAGE))) problems.push(`${label} has an impossible 3-dart average (${v}).`);
+      if (v != null && f.status === 'scheduled') problems.push(`${label} has an average but hasn't been played.`);
+    }
     if (f.status === 'live') {
       if (f.board !== 1 && f.board !== 2) problems.push(`${label} is live but not on a board.`);
       else if (boards.has(f.board)) problems.push(`Two matches are live on board ${f.board}.`);
@@ -596,7 +603,7 @@ export function startMatch(state, id, board) {
   if (finalMustWait(state, f)) fail('The final is played on its own — finish the other matches first (or turn this off in Settings).');
   return mutate(state, (s) => {
     const m = getFixture(s, id);
-    Object.assign(m, { status: 'live', board, homeLegs: 0, awayLegs: 0, startedAt: Date.now(), finishedAt: null });
+    Object.assign(m, { status: 'live', board, homeLegs: 0, awayLegs: 0, homeAvg: null, awayAvg: null, startedAt: Date.now(), finishedAt: null });
   });
 }
 
@@ -605,7 +612,7 @@ export function cancelMatch(state, id) {
   return mutate(state, (s) => {
     const f = getFixture(s, id);
     if (f.status !== 'live') fail('That match is not live.');
-    Object.assign(f, { status: 'scheduled', board: null, homeLegs: 0, awayLegs: 0, startedAt: null });
+    Object.assign(f, { status: 'scheduled', board: null, homeLegs: 0, awayLegs: 0, homeAvg: null, awayAvg: null, startedAt: null });
   });
 }
 
@@ -668,11 +675,49 @@ export function unplayMatch(state, id) {
   if (f.stage === 'league' && state.phase !== 'league') fail('Go back to the league first (no knockout matches played).');
   return mutate(state, (s) => {
     const m = getFixture(s, id);
-    Object.assign(m, { status: 'scheduled', board: null, homeLegs: 0, awayLegs: 0, startedAt: null, finishedAt: null });
+    Object.assign(m, { status: 'scheduled', board: null, homeLegs: 0, awayLegs: 0, homeAvg: null, awayAvg: null, startedAt: null, finishedAt: null });
     if (m.stage !== 'league') {
       s.fixtures = resolveKnockout(s.fixtures);
       updatePhaseAfterKnockout(s);
     }
+  });
+}
+
+// ---------- 3-dart averages ----------
+
+/** Highest possible 3-dart average (three treble 20s every visit). */
+export const MAX_AVERAGE = 180;
+
+function storedAverage(v) {
+  const n = typeof v === 'number' ? v : v == null || v === '' ? null : Number(v);
+  return n === null || !Number.isFinite(n) ? null : n;
+}
+
+/**
+ * Parse what the organiser typed: "54.3", "54,3", " 61 " → number (2 dp);
+ * empty → null (clears it). Anything else → NaN.
+ */
+export function parseAverage(input) {
+  if (input === null || input === undefined) return null;
+  const text = String(input).trim().replace(',', '.');
+  if (text === '') return null;
+  if (!/^\d{1,3}(\.\d*)?$/.test(text)) return NaN;
+  const n = Number(text);
+  return n >= 0 && n <= MAX_AVERAGE ? Math.round(n * 100) / 100 : NaN;
+}
+
+/**
+ * Record a team's 3-dart average for a live or finished match.
+ * `value` may be a number or the raw text from an input; empty clears it.
+ */
+export function setAverage(state, id, side, value) {
+  if (side !== 'home' && side !== 'away') fail('Side must be home or away.');
+  const avg = typeof value === 'number' ? parseAverage(String(value)) : parseAverage(value);
+  if (Number.isNaN(avg)) fail(`A 3-dart average must be a number from 0 to ${MAX_AVERAGE}, e.g. 54.3.`);
+  return mutate(state, (s) => {
+    const f = getFixture(s, id);
+    if (f.status === 'scheduled') fail('Averages can be recorded once the match has started.');
+    f[side === 'home' ? 'homeAvg' : 'awayAvg'] = avg;
   });
 }
 
