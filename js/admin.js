@@ -379,7 +379,7 @@ function viewLive(s) {
   return `
     ${cta}
     <section class="boards">
-      ${[1, 2].map((b) => boardPanel(s, b, next[b])).join('')}
+      ${[1, 2].map((b) => boardPanel(s, b, next[b], next.waiting?.[b])).join('')}
     </section>
     <p class="kbd-help">Keyboard: ${keyHelp(s)} · <kbd>Shift</kbd>+key removes a leg · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</p>
     <section class="split">
@@ -413,7 +413,7 @@ function phaseCallToAction(s) {
   return '';
 }
 
-function boardPanel(s, board, suggested) {
+function boardPanel(s, board, suggested, waiting = null) {
   const name = esc(s.config.boardNames[board - 1]);
   const f = T.liveOnBoard(s, board);
   const k = s.config.keys;
@@ -456,7 +456,17 @@ function boardPanel(s, board, suggested) {
       <p class="muted small-text">${esc(stageName(suggested))} · ${esc(formatLine(s, suggested))}</p>
       <button class="primary big" data-action="start" data-id="${suggested.id}" data-board="${board}">▶ Start on ${name}</button>`;
   } else {
-    inner = `<p class="muted waiting">${esc(idleMessage(s))}</p>`;
+    if (waiting) {
+      // "2 on, 1 off": the planned next match has a team still playing on the other board.
+      const busy = new Set(T.liveFixtures(s).flatMap((x) => [x.homeId, x.awayId]));
+      const who = [waiting.homeId, waiting.awayId].filter((t) => busy.has(t)).map((t) => T.teamName(s, t));
+      const other = T.liveFixtures(s).find((x) => [x.homeId, x.awayId].some((t) => busy.has(t) && (t === waiting.homeId || t === waiting.awayId)));
+      inner = `<p class="muted">Next up — waiting</p>
+        <div class="next-teams">${slotBlock(s, waiting, 'home', { cls: 'end' })}<em>v</em>${slotBlock(s, waiting, 'away')}</div>
+        <p class="waiting-why">Starts when <strong>${esc(who.join(' & '))}</strong> finish${who.length === 1 ? 'es' : ''} on ${esc(s.config.boardNames[(other?.board ?? 1) - 1])} (2 on, 1 off).</p>`;
+    } else {
+      inner = `<p class="muted waiting">${esc(idleMessage(s))}</p>`;
+    }
   }
   const picker = options.length > (suggested ? 1 : 0)
     ? `<label class="picker">Or start another match:
@@ -592,7 +602,7 @@ function fixtureRow(s, f, { boardView = null, boardPos = new Map() } = {}) {
   }
   return `<tr class="${f.status}">
     <td class="num muted">${boardView && f.status === 'scheduled' ? boardPos.get(f.id) ?? '' : f.order}</td>
-    <td>${esc(stageName(f, { short: f.stage === 'league' }))}${f.stage === 'league' && f.round ? `<span class="muted small-text"> · R${f.round}</span>` : ''}</td>
+    <td>${esc(stageName(f, { short: f.stage === 'league' }))}${f.stage === 'league' && f.round ? `<span class="muted small-text"> · ${s.config.fixtureRule === 'pairs' ? 'Slot ' : 'R'}${f.round}</span>` : ''}</td>
     <td>${boardCell(s, f)}</td>
     <td class="r ${w && w === f.homeId ? 'win' : ''}">${slotBlock(s, f, 'home')}</td>
     <td class="c">${score}</td>
@@ -620,6 +630,14 @@ function fixtureEditor(s) {
   }).join('');
   const boardLines = [];
   if (s.fixtures.some((f) => f.stage === 'league')) {
+    const rule = T.pairsRuleReport(s);
+    if (rule) {
+      const names = (list) => list.map((t) => esc(T.teamName(s, t))).join(', ');
+      if (rule.ok) boardLines.push(`<p class="ok-text">✓ 2 on, 1 off: every team plays its matches in pairs and never 3 in a row.</p>`);
+      else {
+        boardLines.push(`<p><strong>2 on, 1 off is broken:</strong> ${rule.threeInRow.length ? `${names(rule.threeInRow)} would play 3 or more in a row. ` : ''}${rule.extraSingles ? `${rule.extraSingles} extra single match${rule.extraSingles === 1 ? '' : 'es'}. ` : ''}Use <em>Regenerate unplayed matches</em> to re-plan.</p>`);
+      }
+    }
     if (b.expected === 2 && b.complete && !b.notOnBothBoards.length && !b.unassigned) boardLines.push(`<p class="ok-text">✓ Every pair plays once on ${esc(s.config.boardNames[0])} and once on ${esc(s.config.boardNames[1])}.</p>`);
     else if (b.boardsEven && !b.unassigned && !b.notOnBothBoards.length) boardLines.push(`<p class="ok-text">✓ Every team's matches are spread evenly over both boards.</p>`);
     if (b.notOnBothBoards.length) boardLines.push(`<p><strong>Not once on each board (${b.notOnBothBoards.length}):</strong> ${b.notOnBothBoards.slice(0, 10).map((p) => `${name(p.a)} v ${name(p.b)} <span class="muted">(B1 ${p.board1} · B2 ${p.board2})</span>`).join(' · ')}${b.notOnBothBoards.length > 10 ? ` · <span class="muted">+${b.notOnBothBoards.length - 10} more</span>` : ''}</p>`);
@@ -887,7 +905,7 @@ function viewTeams(s) {
   const startBlock = setup
     ? `<section class="card start-card">
         <h2>Ready?</h2>
-        <p><strong>${n}</strong> teams · play each other <strong>${s.config.doubleRoundRobin ? 'twice' : 'once'}</strong> · <strong>${n >= 2 ? matches : 0}</strong> league matches · ${legsFormat(s.config.bestOf.league)}</p>
+        <p><strong>${n}</strong> teams · play each other <strong>${s.config.doubleRoundRobin ? 'twice' : 'once'}</strong> · <strong>${n >= 2 ? matches : 0}</strong> league matches · ${legsFormat(s.config.bestOf.league)}${s.config.fixtureRule === 'pairs' ? ' · <strong>2 on, 1 off</strong>' : ''}</p>
         <p class="muted small-text">Change once/twice, match length and points in <a href="#" data-action="tab" data-tab="settings">Settings</a>.</p>
         <button class="primary big" data-action="start-league" ${n < MIN_TEAMS ? 'disabled' : ''}>Generate fixtures &amp; start league</button>
         <p><button class="link" data-action="start-league-manual" ${n < MIN_TEAMS ? 'disabled' : ''}>…or start with an empty fixture list and set the matches yourself</button></p>
@@ -952,6 +970,14 @@ function viewSettings(s) {
           <option value="twice" ${c.doubleRoundRobin ? 'selected' : ''}>Twice</option>
           <option value="once" ${c.doubleRoundRobin ? '' : 'selected'}>Once</option>
         </select></label>
+      <label>Fixture rule
+        <select id="cfg-rule" data-change="fixture-rule">
+          <option value="spread" ${c.fixtureRule !== 'pairs' ? 'selected' : ''}>Spread out — a rest between matches</option>
+          <option value="pairs" ${c.fixtureRule === 'pairs' ? 'selected' : ''}>2 on, 1 off — play 2 in a row, then rest</option>
+        </select></label>
+      ${c.fixtureRule === 'pairs' ? `<p class="muted small-text rule-help">Every team plays its matches in pairs, never 3 in a row, then rests.
+        With two boards 4 teams play at a time, so the rest depends on the number of teams: <strong>6 teams → exactly 1 off</strong>; with more teams some rests are longer.
+        Each team may have one single match (the start needs it). Boards follow the plan and wait for the right teams.</p>` : ''}
       <fieldset class="lengths"><legend>Match length</legend>
         ${boSelect('league', 'League matches')}${boSelect('semi', 'Semi-finals')}${boSelect('final', 'Final')}${boSelect('third', '3rd place play-off')}
       </fieldset>
@@ -1212,6 +1238,13 @@ const changes = {
     const names = [...S().config.boardNames];
     names[Number(el.dataset.idx)] = el.value;
     act('Renamed board', (s) => T.updateConfig(s, { boardNames: names }));
+  },
+  'fixture-rule': (el) => {
+    const was = S().config.fixtureRule;
+    if (!act('Changed fixture rule', (s) => T.updateConfig(s, { fixtureRule: el.value }))) return render();
+    if (S().phase === 'league' && was !== el.value) {
+      toast('Fixture rule changed. Go to Fixtures → “Regenerate unplayed matches” to re-plan the remaining matches with it.', 'info', { timeout: 9000 });
+    }
   },
   rr: (el) => act('Changed settings', (s) => T.updateConfig(s, { doubleRoundRobin: el.value === 'twice' })) || render(),
   bestof: (el) => act('Changed match length', (s) => T.updateConfig(s, { bestOf: { [el.dataset.stage]: Number(el.value) } })) || render(),

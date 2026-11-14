@@ -192,7 +192,7 @@ function setupView(s) {
       ${s.config.showLogo ? `<img class="hero-logo" src="img/logo.png" alt="${esc(s.config.title)}">` : '<div class="eyebrow">Doubles darts</div>'}
       ${logoSaysTitle(s) ? '' : `<h2 class="${s.config.showLogo ? 'with-logo' : ''}">${esc(s.config.title)}</h2>`}
       ${s.config.subtitle ? `<p class="sub">${esc(s.config.subtitle)}</p>` : ''}
-      <p class="rules">${s.config.doubleRoundRobin ? 'Everyone plays everyone twice' : 'Everyone plays everyone once'} · ${legsFormat(s.config.bestOf.league)} · top 4 to the semi-finals</p>
+      <p class="rules">${s.config.doubleRoundRobin ? 'Everyone plays everyone twice' : 'Everyone plays everyone once'} · ${legsFormat(s.config.bestOf.league)}${s.config.fixtureRule === 'pairs' ? ' · 2 on, 1 off' : ''} · top 4 to the semi-finals</p>
     </div>
     <div class="setup-teams">
       <h3>${n ? `${n} team${n === 1 ? '' : 's'} registered` : 'Teams to be announced'}</h3>
@@ -207,10 +207,10 @@ function setupView(s) {
 
 function liveCards(s, ch, { compact = false, stacked = false } = {}) {
   const next = T.nextUp(s);
-  return `<section class="live-row ${compact ? 'compact' : ''} ${stacked ? 'stacked' : ''}">${[1, 2].map((b) => liveCard(s, b, next[b], ch)).join('')}</section>`;
+  return `<section class="live-row ${compact ? 'compact' : ''} ${stacked ? 'stacked' : ''}">${[1, 2].map((b) => liveCard(s, b, next[b] ?? next.waiting?.[b], ch, !next[b] && !!next.waiting?.[b])).join('')}</section>`;
 }
 
-function liveCard(s, board, suggested, ch) {
+function liveCard(s, board, suggested, ch, waiting = false) {
   const name = esc(s.config.boardNames[board - 1]);
   const f = T.liveOnBoard(s, board);
   if (!f) {
@@ -218,7 +218,7 @@ function liveCard(s, board, suggested, ch) {
       <div class="lc-head"><span class="board-name">${name}</span><span class="pill">${suggested ? 'Next up' : 'Free'}</span></div>
       ${suggested
         ? `<div class="lc-next">${slotBlock(s, suggested, 'home', { cls: 'h end' })}<em>v</em>${slotBlock(s, suggested, 'away', { cls: 'a' })}</div>
-           <div class="lc-meta">${esc(stageName(suggested))} · get ready!</div>`
+           <div class="lc-meta">${esc(stageName(suggested))} · ${waiting ? 'after the other board finishes' : 'get ready!'}</div>`
         : `<div class="lc-next muted-big">${s.phase === 'complete' ? 'All done' : 'No match'}</div>`}
     </article>`;
   }

@@ -338,6 +338,8 @@ button.primary:disabled { background: var(--panel-3); border-color: var(--line);
 .problems { margin: 0.5rem 0 0; padding-left: 1.2rem; color: #ffb3b5; }
 .problems li { margin: 0.2rem 0; }
 .tabs button:focus-visible { outline-offset: -3px; }
+.waiting-why { font-size: 0.85rem; color: #ffd27a; max-width: 34ch; }
+.rule-help { margin: -0.3rem 0 0.75rem; }
 fieldset.lengths { border: 1px solid var(--line); border-radius: 10px; padding: 0.4rem 0.8rem 0.1rem; margin: 0 0 0.75rem; }
 fieldset.lengths legend { font-size: 0.85rem; color: var(--muted); padding: 0 0.3rem; }
 fieldset.lengths label { margin-bottom: 0.6rem; }

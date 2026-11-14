@@ -228,6 +228,26 @@ test('fixtures screen: each pair once on each board; set boards, per-board queue
   await ctx.close();
 });
 
+test('"2 on, 1 off" rule: planned in pairs, boards wait for the right teams', { skip }, async () => {
+  const state = T.startLeague(loadDemoTeams(T.createTournament({ fixtureRule: 'pairs' }), 6));
+  const { ctx, admin, tv, errors } = await openPair({ state });
+  await admin.click('.tabs [data-tab="fixtures"]');
+  assert.match(await admin.textContent('.fixture-tools'), /2 on, 1 off: every team plays its matches in pairs and never 3 in a row/);
+  await admin.click('.tabs [data-tab="live"]');
+  await admin.click('text=Start on Board 1');
+  await admin.click('text=Start on Board 2');
+  await admin.click('h2:has-text("Up next")');
+  await admin.keyboard.press('q');
+  await admin.keyboard.press('q');
+  await admin.waitForSelector('dialog[open]');
+  await admin.keyboard.press('Enter');
+  // Board 1's planned next match needs a team still on Board 2: it waits rather than jumping ahead.
+  await admin.waitForSelector('.board .waiting-why');
+  await tv.waitForFunction(() => /after the other board finishes/.test(document.querySelector('.live-card')?.textContent ?? ''));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the final waits for the 3rd place play-off', { skip }, async () => {
   let s = loadDemoTeams(T.createTournament({ thirdPlace: true }), 4);
   s = simulateUntil(s, (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done'), seededRandom(5));

@@ -68,6 +68,17 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 3. Open the TV window and put it on the TV. It shows the logo and the registered teams. Check the admin page says **📺 TV connected**.
 4. Click **Generate fixtures & start league**, or **…start with an empty fixture list** to set every match yourself. After this, teams can be renamed but not added or removed.
 
+**Fixture rule: "2 on, 1 off"** (Settings → Rules → *Fixture rule*, set before generating)
+- Every team plays its matches **in pairs**, two in a row, **never 3 in a row**, then rests.
+- With two boards, 4 teams play at a time, so how long a team rests depends on the number of teams:
+  - **6 teams: exactly 2 on, 1 off** for everyone, both boards always busy.
+  - **8 teams:** half the teams rest at any time, so some rests are longer (mostly 1–2 matches).
+  - **10 or more:** longer rests again.
+  - **4–5 teams:** the closest possible compromise (a rest after every pair can't keep both boards busy).
+- Each team may have **one single match**. The very start needs this, as does an odd number of matches, and a single as a team's very last match is fine. Every pair still plays once on each board.
+- On **Live scoring**, each board keeps to the plan. If its next match includes a team still playing on the other board, it shows **"Next up — waiting… Starts when X finishes on Board 2"** instead of jumping ahead. You can still start another match from the list if you must.
+- **Fixture check** confirms "2 on, 1 off" or says what's broken, and the Fixtures list shows the time **Slot** of each match. If you change the rule after the league has started, use *Regenerate unplayed matches* to re-plan.
+
 **Boards** (Fixtures tab)
 - Every match is planned for **Board 1** or **Board 2**. Generated fixtures give every pair one match on each board, so every team plays half its games on each. The two matches running side by side never involve the same team.
 - Use the **Board 1 / Board 2 / Both boards** switch to see one board's queue in its own running order. There, **↑ ↓** and **Play next** move matches within that board only.
