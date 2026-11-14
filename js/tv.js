@@ -200,9 +200,9 @@ function setupView(s) {
 
 // ---------- live cards
 
-function liveCards(s, ch, { compact = false } = {}) {
+function liveCards(s, ch, { compact = false, stacked = false } = {}) {
   const next = T.nextUp(s);
-  return `<section class="live-row ${compact ? 'compact' : ''}">${[1, 2].map((b) => liveCard(s, b, next[b], ch)).join('')}</section>`;
+  return `<section class="live-row ${compact ? 'compact' : ''} ${stacked ? 'stacked' : ''}">${[1, 2].map((b) => liveCard(s, b, next[b], ch)).join('')}</section>`;
 }
 
 function liveCard(s, board, suggested, ch) {
@@ -212,7 +212,7 @@ function liveCard(s, board, suggested, ch) {
     return `<article class="live-card idle">
       <div class="lc-head"><span class="board-name">${name}</span><span class="pill">${suggested ? 'Next up' : 'Free'}</span></div>
       ${suggested
-        ? `<div class="lc-next"><span>${esc(slotName(s, suggested, 'home'))}</span><em>v</em><span>${esc(slotName(s, suggested, 'away'))}</span></div>
+        ? `<div class="lc-next"><span class="h">${esc(slotName(s, suggested, 'home'))}</span><em>v</em><span class="a">${esc(slotName(s, suggested, 'away'))}</span></div>
            <div class="lc-meta">${esc(stageName(suggested))} · get ready!</div>`
         : `<div class="lc-next muted-big">${s.phase === 'complete' ? 'All done' : 'No match'}</div>`}
     </article>`;
@@ -242,6 +242,17 @@ function liveCard(s, board, suggested, ch) {
 // ---------- league
 
 function leagueView(s, ch) {
+  if (s.teams.length > 10) {
+    // Big league: the table gets the full height so the text stays readable.
+    return `<section class="league-tall">
+      <div class="panel table-panel">${panelTitle('League table', `<span class="hint">Top ${s.config.qualifiers} reach the semi-finals</span>`)}${tableHTML(s, ch.rows, { avail: 790 })}</div>
+      <div class="side-col tall">
+        ${liveCards(s, ch, { stacked: true })}
+        <div class="panel">${panelTitle('Up next')}${upNextHTML(s, 2)}</div>
+        <div class="panel">${panelTitle('Latest results')}${resultsHTML(s, 2, ch.fresh)}</div>
+      </div>
+    </section>`;
+  }
   return `${liveCards(s, ch)}
   <section class="league-grid">
     <div class="panel table-panel">${panelTitle('League table', `<span class="hint">Top ${s.config.qualifiers} reach the semi-finals</span>`)}${tableHTML(s, ch.rows)}</div>
@@ -252,10 +263,10 @@ function leagueView(s, ch) {
   </section>`;
 }
 
-function tableHTML(s, rows, { full = false } = {}) {
+function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
   const q = s.config.qualifiers;
   const live = new Set(T.liveFixtures(s).flatMap((f) => [f.homeId, f.awayId]));
-  const avail = full ? 790 : 460;
+  const avail = availOverride ?? (full ? 790 : 460);
   const rowH = Math.max(28, Math.min(full ? 72 : 60, Math.floor(avail / Math.max(rows.length, 1))));
   const now = Date.now();
   const showForm = full;
