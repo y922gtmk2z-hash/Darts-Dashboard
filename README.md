@@ -68,12 +68,23 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 3. Open the TV window and put it on the TV. It shows the logo and the registered teams. Check the admin page says **📺 TV connected**.
 4. Click **Generate fixtures & start league**, or **…start with an empty fixture list** to set every match yourself. After this, teams can be renamed but not added or removed.
 
+**Fixture rule: "2 on, 1 off"** (Settings → Rules → *Fixture rule*, set before generating)
+- Every team plays its matches **in pairs**, two in a row, **never 3 in a row**, then rests.
+- With two boards, 4 teams play at a time, so how long a team rests depends on the number of teams:
+  - **6 teams: exactly 2 on, 1 off** for everyone, both boards always busy.
+  - **8 teams:** half the teams rest at any time, so some rests are longer (mostly 1–2 matches).
+  - **10 or more:** longer rests again.
+  - **4–5 teams:** the closest possible compromise (a rest after every pair can't keep both boards busy).
+- Each team may have **one single match**. The very start needs this, as does an odd number of matches, and a single as a team's very last match is fine. Every pair still plays once on each board.
+- On **Match day**, each board keeps to the plan. If its next match includes a team still playing on the other board, the card says **"Starts when X finishes on Board 2"** instead of the board jumping ahead. You can still start or type in any other match if you must.
+- **Fixture check** confirms "2 on, 1 off" or says what's broken, and the Fixtures list shows the time **Slot** of each match. If you change the rule after the league has started, use *Regenerate unplayed matches* to re-plan.
+
 **Boards** (Fixtures tab)
 - Every match is planned for **Board 1** or **Board 2**. Generated fixtures give every pair one match on each board, so every team plays half its games on each. The two matches running side by side never involve the same team.
 - Use the **Board 1 / Board 2 / Both boards** switch to see one board's queue in its own running order. There, **↑ ↓** and **Play next** move matches within that board only.
 - Change any unplayed match's board with the dropdown in its **Board** column (or in **Edit**). *Either* lets whichever board is free take it.
 - **Fixture check** shows each team's Board 1 / Board 2 split and lists any pair that isn't once on each board. **Balance boards automatically** re-plans the boards of all unplayed matches without changing their order.
-- On **Live scoring**, each board's *Next up* comes from its own queue. If one board runs out while the other still has matches, it borrows the next one. You can always start a different match from the *Or start another match* list; a match started on the other board is recorded as played there.
+- On **Match day**, each board's *Next* match comes from its own column. If one board runs out while the other still has matches, it borrows the next one. *Move to the other board* (⋯) moves a match across; a match started on the other board is recorded as played there.
 
 **Setting the fixtures yourself** (Fixtures tab, any time during the league)
 - **Add a match:** pick the home and away teams (and optionally the board), then click **Add**. It goes to the end of the queue. *Board: auto* puts a pair's second meeting on the other board.
@@ -87,14 +98,13 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 - **Regenerate unplayed matches** keeps every played result and schedules exactly the meetings still owed. **Delete all unplayed matches** clears the queue so you can start again.
 - Played and live matches can't be changed here. Use **Edit** / **Un-play** on their result instead.
 
-**During the league** (Live scoring tab)
-- Each board shows its **Next up** match. Click **▶ Start on Board 1/2**, or pick a different one from the list.
-- Add a leg with the big **+ Leg** button or the keyboard. Take one off with **−**.
-- **3-dart averages (optional):** each team on a live board has a **3-dart avg** box. Type the average, e.g. `54.3` (a comma works too), then press Enter or click away. The TV shows it under the team straight away.
-- When a side reaches the winning number of legs, a box pops up showing both averages, so you can fill in or correct them. Press **Enter** to finish the match, or choose **Undo last leg**.
-- Averages can be changed later in **Fixtures → Edit**. Leave one blank if you didn't track it. The league table's **Avg** column (on the TV and admin) is each team's mean over the league matches where an average was recorded. It appears once the first average is entered.
-- Mistake? Press **Ctrl+Z** (or **↶ Undo**). To correct an older result, go to **Fixtures → Edit**.
-- Need a different order? Go to **Fixtures** and use **↑ ↓** or **Play next**. The team filter there shows one team's matches.
+**During the league** (Match day tab)
+- **Match day** lists every fixture in two columns, **Board 1 | Board 2**. Each row is a time slot: the two matches side by side run at the same time. The list opens at the current matches, and the header shows what's live on each board (click it to jump there).
+- **Type a result straight in:** enter both teams' legs (and 3-dart averages if you have them) in a match's card, then press **Save result** or Enter. No need to start it first. Invalid scores (e.g. 1–1 in a first-to-2 match) are refused.
+- **Or score it live on the TV:** press **▶ Start on Board 1/2** in the card. The card then has big **+ / −** leg buttons (or use the keyboard) and **avg** boxes. When a team wins, a box pops up with both averages to confirm; press **Enter** to finish.
+- **Correct a result:** **Edit result** on a finished card changes the legs and averages in place. **⋯** on any card has *Play next on this board*, *Move earlier/later*, *Move to the other board*, *Swap home / away*, *Change teams…*, *Delete match* and *Un-play*.
+- The league table's **Avg** column (TV and admin) is each team's mean over finished league matches with an average recorded.
+- Mistake? Press **Ctrl+Z** (or **↶ Undo**). The Fixtures tab still has the full list tools (add, paste, fixture check, balance boards).
 
 | Key | Action |
 | --- | --- |
@@ -104,7 +114,7 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 | `Ctrl` + `Z` | Undo the last change |
 | `Enter` / `Esc` | In the "win" box: finish the match / keep it open |
 
-You can change these keys in **Settings**. They work on every tab, as long as you're not typing in a box. On any tab other than Live scoring, a small message confirms the new score.
+You can change these keys in **Settings**. They work on every tab, as long as you're not typing in a box. On any tab other than Match day, a small message confirms the new score.
 
 **Knockout**
 1. When the last league match finishes, click **Start knockout…**.

@@ -4,6 +4,7 @@
 
 import { DEFAULT_CONFIG, MIN_TEAMS, MAX_TEAMS, STAGES, normalizeConfig, legsToWinFor } from './config.js';
 import { generateLeagueFixtures } from './fixtures.js';
+import { planBlocks, slotsFromFixtures, scoreBlocks, assignBoards } from './blocks.js';
 import { computeStandings } from './standings.js';
 import { createKnockoutFixtures, resolveKnockout, isDecided, winnerOf } from './bracket.js';
 import { uid, clone } from './util.js';
@@ -164,7 +165,8 @@ export function upcoming(state) {
  */
 export function nextUp(state) {
   const queue = upcoming(state);
-  const result = { 1: null, 2: null };
+  const result = { 1: null, 2: null, waiting: { 1: null, 2: null } };
+  const strict = state.config.fixtureRule === 'pairs' && state.phase === 'league';
   const boards = [1, 2].sort((a, b) => Number(!!liveOnBoard(state, a)) - Number(!!liveOnBoard(state, b)));
   const taken = new Set();
   const reserved = new Set();
@@ -181,8 +183,17 @@ export function nextUp(state) {
     // Matches planned for this board (or either board) first. Only when this
     // board has nothing planned left does it borrow from the other board's queue.
     const ownQueueEmpty = !queue.some((f) => !taken.has(f.id) && f.plannedBoard === board);
-    const pick = queue.find((f) => free(f) && (f.plannedBoard == null || f.plannedBoard === board))
-      ?? (ownQueueEmpty ? queue.find(free) : undefined);
+    let pick;
+    if (strict && !ownQueueEmpty) {
+      // "2 on, 1 off": keep to the planned order — if the next match on this
+      // board has a team still playing, the board waits for it.
+      const head = queue.find((f) => !taken.has(f.id) && (f.plannedBoard == null || f.plannedBoard === board) && !finalMustWait(state, f, taken));
+      if (head && free(head)) pick = head;
+      else if (head) result.waiting[board] = head;
+    } else {
+      pick = queue.find((f) => free(f) && (f.plannedBoard == null || f.plannedBoard === board))
+        ?? (ownQueueEmpty ? queue.find(free) : undefined);
+    }
     if (pick) {
       result[board] = pick;
       taken.add(pick.id);
@@ -371,11 +382,43 @@ export function startLeague(state, { manual = false } = {}) {
   if (state.phase !== 'setup') fail('The league has already started.');
   if (state.teams.length < MIN_TEAMS) fail(`Need at least ${MIN_TEAMS} teams.`);
   return mutate(state, (s) => {
-    s.fixtures = manual
-      ? []
-      : generateLeagueFixtures(s.teams.map((t) => t.id), { double: s.config.doubleRoundRobin });
+    s.fixtures = manual ? [] : leagueFixturesByRule(s);
     s.phase = 'league';
   });
+}
+
+/** A full league fixture list following the configured fixture rule. */
+function leagueFixturesByRule(s) {
+  const ids = s.teams.map((t) => t.id);
+  if (s.config.fixtureRule !== 'pairs') return generateLeagueFixtures(ids, { double: s.config.doubleRoundRobin });
+  const { matches } = planBlocks(ids, { double: s.config.doubleRoundRobin });
+  return matches.map((m, i) => ({
+    id: `L${i + 1}`, stage: 'league', round: m.round, homeId: m.homeId, awayId: m.awayId,
+    plannedBoard: m.plannedBoard, board: null, status: 'scheduled', homeLegs: 0, awayLegs: 0,
+    order: i + 1, startedAt: null, finishedAt: null,
+  }));
+}
+
+/**
+ * How well the league follows the "2 on, 1 off" rule as things stand: the
+ * k-th match on each board are taken to run together. Returns null when the
+ * rule isn't switched on.
+ */
+export function pairsRuleReport(state) {
+  if (state.config.fixtureRule !== 'pairs') return null;
+  const league = leagueFixtures(state);
+  const slots = slotsFromFixtures(league);
+  const ids = state.teams.map((t) => t.id);
+  const q = scoreBlocks(slots, ids);
+  const threeInRow = [];
+  for (const t of ids) {
+    let run = 0;
+    for (const sl of slots) {
+      run = sl.some((m) => m.homeId === t || m.awayId === t) ? run + 1 : 0;
+      if (run > 2) { threeInRow.push(t); break; }
+    }
+  }
+  return { ...q, threeInRow, ok: q.tooMany === 0 && q.extraSingles === 0 };
 }
 
 // ---------- manual fixture editing (league, unplayed matches only) ----------
@@ -467,6 +510,23 @@ export function autoAssignBoards(state) {
   assertLeagueEditable(state);
   return mutate(state, (s) => {
     const queue = s.fixtures.filter((f) => f.stage === 'league' && f.status === 'scheduled').sort(byOrder);
+    if (s.config.fixtureRule === 'pairs') {
+      // Keep each time slot's two matches together; only choose which takes Board 1.
+      // Slots come from the plan (round = slot number) so hand-changed boards can be repaired.
+      const planned = queue.every((f) => f.round != null);
+      const bySlot = new Map();
+      for (const f of queue) bySlot.set(f.round, [...(bySlot.get(f.round) ?? []), f]);
+      const slots = planned ? [...bySlot.keys()].sort((x, y) => x - y).map((k) => bySlot.get(k)) : slotsFromFixtures(queue);
+      const assigned = assignBoards(slots.map((sl) => sl.map((f) => ({ ...f }))), s.config.doubleRoundRobin);
+      const orders = queue.map((f) => f.order);
+      const flat = assigned.flatMap((sl) => sl.slice().sort((a, b) => a.plannedBoard - b.plannedBoard));
+      flat.forEach((p, i) => {
+        const f = s.fixtures.find((x) => x.id === p.id);
+        f.plannedBoard = p.plannedBoard;
+        f.order = orders[i];
+      });
+      return;
+    }
     for (const f of queue) f.plannedBoard = null;
     for (const f of queue) f.plannedBoard = suggestBoard(s, f.homeId, f.awayId);
   });
@@ -555,7 +615,7 @@ export function regenerateUnplayed(state) {
   assertLeagueEditable(state);
   return mutate(state, (s) => {
     const kept = s.fixtures.filter((f) => f.stage !== 'league' || f.status !== 'scheduled');
-    const wanted = generateLeagueFixtures(s.teams.map((t) => t.id), { double: s.config.doubleRoundRobin });
+    const wanted = leagueFixturesByRule(s);
     // Remove one generated match per meeting already played/live (home/away aware first, then either way).
     const remaining = wanted.slice();
     for (const f of kept.filter((x) => x.stage === 'league')) {
@@ -566,8 +626,10 @@ export function regenerateUnplayed(state) {
     s.fixtures = kept;
     for (const m of remaining) {
       const order = Math.max(0, ...s.fixtures.filter((f) => f.stage === 'league').map((f) => f.order)) + 1;
-      // A pair that already met on one board plays the rest on the other.
-      s.fixtures.push({ ...m, id: nextLeagueId(s), order, plannedBoard: suggestBoard(s, m.homeId, m.awayId) });
+      // A pair that already met on one board plays the rest on the other
+      // (the "2 on, 1 off" plan keeps its own boards so matches stay paired in time).
+      const plannedBoard = s.config.fixtureRule === 'pairs' ? m.plannedBoard : suggestBoard(s, m.homeId, m.awayId);
+      s.fixtures.push({ ...m, id: nextLeagueId(s), order, plannedBoard });
     }
   });
 }
@@ -742,6 +804,50 @@ export function finishMatch(state, id) {
       s.fixtures = resolveKnockout(s.fixtures);
       updatePhaseAfterKnockout(s);
     }
+  });
+}
+
+/**
+ * Record a whole result in one go — for a match that is live, or one that was
+ * never started on the dashboard (scores typed straight into the fixture
+ * list). Averages are optional (number, text, or ''/null to leave blank).
+ */
+export function recordResult(state, id, homeLegs, awayLegs, { homeAvg, awayAvg } = {}) {
+  const f = getFixture(state, id);
+  if (f.status === 'done') fail('That match already has a result — use Edit to change it.');
+  if (!f.homeId || !f.awayId) fail('Both teams are not known yet.');
+  if (f.stage === 'league' && state.phase !== 'league') fail('The league is over.');
+  if (f.stage !== 'league' && state.phase !== 'knockout') fail('The knockout has not started.');
+  if (f.status === 'scheduled' && finalMustWait(state, f)) fail('The final is played on its own — finish the other matches first.');
+  const h = Number(homeLegs);
+  const a = Number(awayLegs);
+  if (!isDecided({ ...f, homeLegs: h, awayLegs: a }, state.config)) {
+    fail(`Not a valid result — the winner needs exactly ${legsToWinFor(state.config, f.stage)} legs.`);
+  }
+  let s = mutate(state, (st) => {
+    const m = getFixture(st, id);
+    if (m.status === 'scheduled') {
+      Object.assign(m, { status: 'live', board: m.plannedBoard ?? 1, startedAt: Date.now(), homeAvg: null, awayAvg: null });
+    }
+    m.homeLegs = h;
+    m.awayLegs = a;
+  });
+  if (homeAvg !== undefined) s = setAverage(s, id, 'home', homeAvg ?? '');
+  if (awayAvg !== undefined) s = setAverage(s, id, 'away', awayAvg ?? '');
+  return finishMatch(s, id);
+}
+
+/** Set a live match's legs directly (clamped to the winning count). */
+export function setLegs(state, id, homeLegs, awayLegs) {
+  return mutate(state, (s) => {
+    const f = getFixture(s, id);
+    if (f.status !== 'live') fail('That match is not live.');
+    const need = legsToWinFor(s.config, f.stage);
+    const h = Math.max(0, Math.min(need, Math.round(Number(homeLegs)) || 0));
+    const a = Math.max(0, Math.min(need, Math.round(Number(awayLegs)) || 0));
+    if (h === need && a === need) fail('Only one team can reach the winning number of legs.');
+    f.homeLegs = h;
+    f.awayLegs = a;
   });
 }
 

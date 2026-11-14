@@ -8,6 +8,9 @@ export const DEFAULT_CONFIG = Object.freeze({
   accent: '#f2b632',
   gameType: '501 · double out',
   doubleRoundRobin: true, // every team plays every other team twice
+  // 'spread': a rest between matches where possible.
+  // 'pairs':  "2 on, 1 off" — every team plays 2 matches in a row, then rests.
+  fixtureRule: 'spread',
   bestOf: Object.freeze({ league: 3, semi: 3, third: 3, final: 3 }),
   points: Object.freeze({ win: 3, loss: 0 }),
   qualifiers: 4, // fixed: top 4 -> semi-finals
@@ -59,6 +62,7 @@ export function normalizeConfig(input = {}) {
     accent: /^#[0-9a-f]{6}$/i.test(c.accent ?? '') ? c.accent : d.accent,
     gameType: typeof c.gameType === 'string' ? c.gameType.trim().slice(0, 40) : d.gameType,
     doubleRoundRobin: typeof c.doubleRoundRobin === 'boolean' ? c.doubleRoundRobin : d.doubleRoundRobin,
+    fixtureRule: c.fixtureRule === 'pairs' ? 'pairs' : 'spread',
     bestOf,
     points: {
       win: clampInt(c.points?.win, 0, 99, d.points.win),

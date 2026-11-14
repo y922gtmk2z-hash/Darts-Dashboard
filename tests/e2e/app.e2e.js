@@ -105,7 +105,7 @@ test('admin → TV sync, TV connection indicator, refresh recovery', { skip }, a
   await tv.reload();
   await tv.waitForSelector('.live-card:not(.idle)');
   await admin.reload();
-  assert.match(await admin.textContent('.board.live'), /1/);
+  assert.match(await admin.textContent('.mcard.live'), /1/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -160,7 +160,7 @@ test('3-dart averages: typed on the live board, confirmed when finishing, shown 
   await admin.waitForSelector('.toast.error');
   assert.equal(await admin.inputValue('#avg-L1-away'), '', 'invalid entry rolled back');
   // Win the match; the finish box offers both averages (home prefilled).
-  await admin.click('body');
+  await admin.click('.kbd-help'); // somewhere with no text box, so keys score
   await admin.keyboard.press('q');
   await admin.keyboard.press('q');
   await admin.waitForSelector('dialog[open] input[name="awayAvg"]');
@@ -228,14 +228,68 @@ test('fixtures screen: each pair once on each board; set boards, per-board queue
   await ctx.close();
 });
 
+test('"2 on, 1 off" rule: planned in pairs, boards wait for the right teams', { skip }, async () => {
+  const state = T.startLeague(loadDemoTeams(T.createTournament({ fixtureRule: 'pairs' }), 6));
+  const { ctx, admin, tv, errors } = await openPair({ state });
+  await admin.click('.tabs [data-tab="fixtures"]');
+  assert.match(await admin.textContent('.fixture-tools'), /2 on, 1 off: every team plays its matches in pairs and never 3 in a row/);
+  await admin.click('.tabs [data-tab="live"]');
+  await admin.click('text=Start on Board 1');
+  await admin.click('text=Start on Board 2');
+  await admin.click('.kbd-help');
+  await admin.keyboard.press('q');
+  await admin.keyboard.press('q');
+  await admin.waitForSelector('dialog[open]');
+  await admin.keyboard.press('Enter');
+  // Board 1's planned next match needs a team still on Board 2: it waits rather than jumping ahead.
+  await admin.waitForSelector('.mcard .waiting-why');
+  await tv.waitForFunction(() => /after the other board finishes/.test(document.querySelector('.live-card')?.textContent ?? ''));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('match day: Board 1 and Board 2 side by side; type a result and averages straight into the list', { skip }, async () => {
+  const { ctx, admin, tv, errors } = await openPair({ state: leagueState(8) });
+  await admin.click('.tabs [data-tab="live"]');
+  // Row k holds the k-th match of each board.
+  const firstRow = await admin.$$eval('.md-row:first-child .mcard', (els) => els.map((e) => e.id.slice(2)));
+  const s0 = leagueState(8);
+  assert.deepEqual(firstRow, [T.upcoming(s0).find((f) => f.plannedBoard === 1).id, T.upcoming(s0).find((f) => f.plannedBoard === 2).id]);
+  // Type a result for a match that was never started.
+  const id = firstRow[1];
+  await admin.fill(`#d-${id}-homeLegs`, '1');
+  await admin.fill(`#d-${id}-awayLegs`, '2');
+  await admin.fill(`#d-${id}-homeAvg`, '44,4');
+  await admin.fill(`#d-${id}-awayAvg`, '61');
+  await admin.press(`#d-${id}-awayAvg`, 'Enter');
+  await admin.waitForSelector(`#m-${id}.done`);
+  const f = await admin.evaluate(([k, fid]) => JSON.parse(localStorage.getItem(k)).fixtures.find((x) => x.id === fid), [KEY, id]);
+  assert.deepEqual([f.status, f.homeLegs, f.awayLegs, f.homeAvg, f.awayAvg], ['done', 1, 2, 44.4, 61]);
+  await tv.waitForFunction(() => [...document.querySelectorAll('.tv-table td.avg')].some((td) => td.textContent === '61.00'));
+  // An invalid typed score is refused and nothing is saved.
+  const other = firstRow[0];
+  await admin.fill(`#d-${other}-homeLegs`, '1');
+  await admin.fill(`#d-${other}-awayLegs`, '1');
+  await admin.click(`#m-${other} [data-action="md-save"]`);
+  await admin.waitForSelector('.toast.error');
+  assert.equal(await admin.locator(`#m-${other}.todo`).count(), 1);
+  // Correct the saved result in place.
+  await admin.click(`#m-${id} [data-action="md-edit"]`);
+  await admin.selectOption(`#e-${id}-homeLegs`, '0');
+  await admin.fill(`#e-${id}-awayAvg`, '62.5');
+  await admin.click(`#m-${id} [data-action="md-edit-save"]`);
+  await admin.waitForFunction((fid) => /62\.50/.test(document.getElementById(`m-${fid}`)?.textContent ?? ''), id);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the final waits for the 3rd place play-off', { skip }, async () => {
   let s = loadDemoTeams(T.createTournament({ thirdPlace: true }), 4);
   s = simulateUntil(s, (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done'), seededRandom(5));
   const { ctx, admin } = await openPair({ state: s });
   await admin.click('.tabs [data-tab="live"]');
-  const boards = await admin.locator('.board').allTextContents();
-  assert.ok(boards.some((t) => /3rd place/.test(t)));
-  assert.ok(!boards.some((t) => /Final/.test(t) && /Start on/.test(t)), 'final not offered yet');
+  assert.ok(await admin.locator('#m-3P [data-action="start"]').count() > 0, '3rd place can start');
+  assert.equal(await admin.locator('#m-F [data-action="start"]').count(), 0, 'final not offered yet');
   await ctx.close();
 });
 
