@@ -276,7 +276,7 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
   const rowH = Math.max(28, Math.min(full ? 72 : 60, Math.floor(avail / Math.max(rows.length, 1))));
   const now = Date.now();
   const showForm = full;
-  const showAvg = rows.some((r) => r.avg !== null);
+  const showAvg = true; // always shown ("–" until a team has a finished match with an average)
   return `<table class="tv-table ${showAvg ? 'with-avg' : ''}" style="--row-h:${rowH}px">
     <thead><tr><th class="pos">#</th><th class="team">Team</th><th>P</th><th>W</th><th>L</th><th>+/-</th>${showAvg ? '<th class="avg-h">Avg</th>' : ''}<th class="pts">Pts</th>${showForm ? '<th class="form-h">Form</th>' : ''}</tr></thead>
     <tbody>${rows.map((r, i) => {

@@ -433,6 +433,7 @@ function boardPanel(s, board, suggested) {
         <label class="avg-live">3-dart avg
           <input id="avg-${f.id}-${which}" data-change="avg" data-id="${f.id}" data-side="${which}" inputmode="decimal" autocomplete="off"
             placeholder="–" value="${esc(fmtAvg(f[`${which}Avg`]))}" aria-label="3-dart average for ${esc(slotName(s, f, which))}"></label>
+        ${f.stage === 'league' ? '<span class="avg-note">Goes in the table when the match is finished</span>' : ''}
         <div class="leg-btns">
           <button class="minus" data-action="leg" data-id="${f.id}" data-side="${which}" data-delta="-1" ${legs === 0 ? 'disabled' : ''} aria-label="Remove a leg from ${esc(slotName(s, f, which))}">−</button>
           <button class="plus" data-action="leg" data-id="${f.id}" data-side="${which}" data-delta="1" ${decided ? 'disabled' : ''} aria-label="Leg to ${esc(slotName(s, f, which))}">+ Leg <kbd>${esc(key.toUpperCase())}</kbd></button>
@@ -749,7 +750,7 @@ async function editResultDialog(id) {
 
 function standingsTable(s, { compact = false } = {}) {
   const rows = T.standings(s);
-  const showAvg = rows.some((r) => r.avg !== null);
+  const showAvg = true; // always shown, so it's clear where averages appear ("–" until recorded)
   const live = new Set(T.liveFixtures(s).filter((f) => f.stage === 'league').flatMap((f) => [f.homeId, f.awayId]));
   const q = s.config.qualifiers;
   return `<table class="standings ${compact ? 'compact' : ''}">

@@ -151,6 +151,7 @@ test('finishing from the keyboard: Enter confirms, result reaches the table', { 
 test('3-dart averages: typed on the live board, confirmed when finishing, shown on TV and in the table', { skip }, async () => {
   const s = T.startMatch(leagueState(), 'L1', 1);
   const { ctx, admin, tv, errors } = await openPair({ state: s });
+  assert.equal(await tv.locator('.tv-table .avg-h').count(), 1, 'Avg column shown before any average is recorded');
   await admin.fill('#avg-L1-home', '54,3');
   await admin.press('#avg-L1-home', 'Enter');
   await tv.waitForFunction(() => document.querySelector('[data-avg="L1-home"]')?.textContent === '54.30');
@@ -166,7 +167,9 @@ test('3-dart averages: typed on the live board, confirmed when finishing, shown 
   assert.equal(await admin.inputValue('dialog input[name="homeAvg"]'), '54.30');
   await admin.fill('dialog input[name="awayAvg"]', '47.5');
   await admin.press('dialog input[name="awayAvg"]', 'Enter');
-  await tv.waitForSelector('.tv-table .avg-h');
+  // The Avg column is always on the TV table; the team's average lands in it once the match is finished.
+  assert.equal(await tv.locator('.tv-table .avg-h').count(), 1);
+  await tv.waitForFunction(() => [...document.querySelectorAll('.tv-table td.avg')].some((td) => td.textContent === '54.30'));
   const stored = await admin.evaluate((k) => JSON.parse(localStorage.getItem(k)).fixtures.find((f) => f.id === 'L1'), KEY);
   assert.deepEqual([stored.status, stored.homeAvg, stored.awayAvg], ['done', 54.3, 47.5]);
   await admin.click('.tabs [data-tab="table"]');
