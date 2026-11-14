@@ -129,6 +129,8 @@ Browser storage can be cleared, so take backups.
 | Browser closed or laptop restarted | Just reopen both pages. Everything reloads from storage |
 | Storage wiped or a new laptop | **Backup & recovery → Import JSON backup** and choose your latest file |
 | TV not updating / admin says **TV not connected** | Both windows must be in the same browser, on exactly the same address (the TV's waiting screen shows it), and not private. Reopen it with **📺 Open TV window**. Refreshing the TV is always safe |
+| Admin says **📺 TV needs a refresh** | The TV window is running an older version of the app (it was open before an update). Click inside it and press **F5** (Mac: **Cmd+R**) once. Your tournament isn't affected |
+| Admin shows **This admin page is out of date** | Click **Reload now**. Everything is saved and comes straight back |
 | TV shows **Not connected to the admin window** (small, bottom right) | The admin window is closed or in another browser. Reopen admin.html in the same browser |
 | Import says **This backup has problems** | The file is damaged or was edited. Nothing was changed. Import an earlier backup file |
 | "Admin is open in another window" | Close the extra admin tab and only score from one |
@@ -213,4 +215,7 @@ tests/e2e/               browser tests (admin + TV together), need Playwright
 - The unit tests include random sequences of organiser actions that must never break the tournament's rules: one match per board, no team on two boards, valid scores, and a valid state at every step.
 - **Data model:** a single tournament object `{config, phase, teams[], fixtures[], seeds}`. Standings and the bracket are always derived and never stored.
 - **Adding remote scoring later:** write another adapter with the same shape as `createLocalStorageAdapter` in `js/store.js` (`load`, `save`, `listen`, `broadcast`…), for example backed by Firebase, and pass it to `createStore`. Nothing else needs to change.
-- After changing cached files, bump `VERSION` in `sw.js` so browsers pick up the new version promptly.
+- **Releasing a change:** bump `APP_VERSION` in `js/version.js` *and* `VERSION` in `sw.js` (a test fails if they differ).
+  - When online, the service worker fetches the latest files first. It falls back to its saved copy only when offline or the network is slow, so one reload picks up a deploy.
+  - A TV window left open from an older release refreshes itself as soon as a newer admin page is open. It tries once, so a stubborn cache can't cause a reload loop.
+  - If the TV is the newer one, the admin page shows a "This admin page is out of date — Reload now" banner.

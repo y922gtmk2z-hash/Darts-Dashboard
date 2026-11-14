@@ -16,3 +16,9 @@ test('service worker pre-caches every page, script and stylesheet', () => {
   files.push('./index.html', './admin.html');
   for (const f of files) assert.ok(sw.includes(`'${f}'`), `${f} missing from sw.js ASSETS`);
 });
+
+test('service worker cache version matches the app version (bump both together)', async () => {
+  const { APP_VERSION } = await import('../js/version.js');
+  const sw = readFileSync(join(root, 'sw.js'), 'utf8');
+  assert.match(sw, new RegExp(`const VERSION = 'v${APP_VERSION}';`));
+});

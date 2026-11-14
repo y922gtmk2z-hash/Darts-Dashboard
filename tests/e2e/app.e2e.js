@@ -175,6 +175,30 @@ test('3-dart averages: typed on the live board, confirmed when finishing, shown 
   await ctx.close();
 });
 
+test('a TV left open from an older release refreshes itself (once) when the admin page is newer', { skip }, async () => {
+  // No service worker here so route() sees every request.
+  const ctx = await browser.newContext({ serviceWorkers: 'block' });
+  const tv = await ctx.newPage();
+  let tvLoads = 0;
+  tv.on('load', () => { tvLoads++; });
+  await tv.goto(`${base}/index.html?preview=1`);
+  // The admin page gets a "newer release" (the server still serves the old one to the TV).
+  const admin = await ctx.newPage();
+  await admin.route('**/js/version.js', (route) => route.fulfill({ contentType: 'text/javascript', body: 'export const APP_VERSION = 999;' }));
+  await admin.goto(`${base}/admin.html`);
+  await tv.waitForEvent('load', { timeout: 8000 });
+  // Still "old" after reloading: the guard must stop it reloading again and again.
+  await admin.waitForTimeout(5000);
+  assert.equal(tvLoads, 2, 'reloaded exactly once');
+  // A TV running a *newer* release makes the admin page ask to be reloaded.
+  const admin2 = await ctx.newPage();
+  await tv.route('**/js/version.js', (route) => route.fulfill({ contentType: 'text/javascript', body: 'export const APP_VERSION = 1000;' }));
+  await admin2.goto(`${base}/admin.html`);
+  await tv.reload();
+  await admin2.waitForSelector('text=This admin page is out of date', { timeout: 8000 });
+  await ctx.close();
+});
+
 test('the final waits for the 3rd place play-off', { skip }, async () => {
   let s = loadDemoTeams(T.createTournament({ thirdPlace: true }), 4);
   s = simulateUntil(s, (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done'), seededRandom(5));

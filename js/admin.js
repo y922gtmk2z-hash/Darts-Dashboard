@@ -1,5 +1,6 @@
 // Organiser controls. Writes to the store; the TV window follows automatically.
 import { createStore, createLocalStorageAdapter } from './store.js';
+import { APP_VERSION } from './version.js';
 import * as T from './logic/tournament.js';
 import { knockoutSeeding, bracketView, winnerOf } from './logic/bracket.js';
 import { legsToWinFor, bestOfFor, MIN_TEAMS, MAX_TEAMS } from './logic/config.js';
@@ -337,6 +338,9 @@ function renderBanners() {
     out.push(`<div class="banner error"><strong>Browser storage is unavailable</strong> (private window or blocked site data). Scores will be lost on refresh — open this page in a normal window, and export backups often.</div>`);
   } else if (store.saveError) {
     out.push(`<div class="banner error"><strong>Last change could not be saved:</strong> ${esc(store.saveError.message)}. Export a backup now.</div>`);
+  }
+  if (adminOutdated) {
+    out.push(`<div class="banner warn"><strong>This admin page is out of date.</strong> A newer version of the app is open in another window. <button class="primary small" data-action="reload-page">Reload now</button> — your tournament is saved and comes straight back.</div>`);
   }
   if (otherAdmin) {
     out.push(`<div class="banner warn">The admin page is also open in another tab or window. Use only one admin window so changes don't clash. <button data-action="dismiss-other">Dismiss</button></div>`);
@@ -1109,6 +1113,7 @@ const actions = {
     }
   },
   reset: () => resetFlow(),
+  'reload-page': () => location.reload(),
   'dismiss-other': () => { otherAdmin = false; renderBanners(); },
 };
 
@@ -1297,13 +1302,19 @@ store.subscribe((_s, meta) => {
 // ---------------------------------------------------------------- TV presence
 // The TV window sends a heartbeat; show whether one is listening right now.
 let tvSeenAt = 0;
+let tvVersion = APP_VERSION;
+let adminOutdated = false;
 const tvConnected = () => Date.now() - tvSeenAt < 7000;
 function renderTvStatus() {
   const el = $('#tv-status');
   const ok = tvConnected();
-  el.className = `tv-status ${ok ? 'ok' : 'off'}`;
-  el.textContent = ok ? '📺 TV connected' : '📺 TV not connected';
-  el.title = ok
+  // A TV from before version checks existed can't refresh itself: ask the organiser to.
+  const stale = ok && tvVersion < APP_VERSION && tvVersion < 5;
+  el.className = `tv-status ${ok && !stale ? 'ok' : 'off'}`;
+  el.textContent = stale ? '📺 TV needs a refresh' : ok ? '📺 TV connected' : '📺 TV not connected';
+  el.title = stale
+    ? 'The TV window is running an older version of the app. Click inside it and press F5 (Ctrl+R / Cmd+R) once.'
+    : ok
     ? 'A TV window is open in this browser and receiving updates.'
     : `No TV window is listening. Open it with “Open TV window”, from the same address (${location.origin}) and the same browser — not a private window.`;
 }
@@ -1311,14 +1322,20 @@ store.onMessage((msg) => {
   if (msg.type === 'tv-beat' && !msg.preview) {
     const wasConnected = tvConnected();
     tvSeenAt = Date.now();
+    tvVersion = Number(msg.version) || 0;
     if (!wasConnected) renderTvStatus();
+  }
+  // Another window runs a newer release than this admin page: ask for a reload.
+  if ((Number(msg.version) || 0) > APP_VERSION && !adminOutdated) {
+    adminOutdated = true;
+    renderBanners();
   }
 });
 setInterval(() => {
-  store.post({ type: 'admin-beat', at: Date.now() });
+  store.post({ type: 'admin-beat', at: Date.now(), version: APP_VERSION });
   renderTvStatus();
 }, 2000);
-store.post({ type: 'admin-beat', at: Date.now() });
+store.post({ type: 'admin-beat', at: Date.now(), version: APP_VERSION });
 
 setInterval(renderSaved, 1000);
 navigator.storage?.persist?.().catch(() => {});
