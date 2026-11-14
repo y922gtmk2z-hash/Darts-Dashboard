@@ -64,7 +64,19 @@ If the TV can only mirror the laptop, **share just the TV window or tab, never t
 1. Open **admin.html** and check the **Settings** tab: title, venue, best-of, points, once or twice.
 2. **Teams** tab: add teams one by one, or paste a list with one team per line (`Team name: Player A & Player B`).
 3. Open the TV window and put it on the TV. It shows the title and the registered teams.
-4. Click **Generate fixtures & start league**. After this, teams can be renamed but not added or removed.
+4. Click **Generate fixtures & start league**, or **…start with an empty fixture list** to set every match yourself. After this, teams can be renamed but not added or removed.
+
+**Setting the fixtures yourself** (Fixtures tab, any time during the league)
+- **Add a match:** pick the home and away teams, then click **Add**. It goes to the end of the queue.
+- **Paste a fixture list:** one match per line, in play order, as `Team A v Team B` (`vs` and `-` also work). Team names must match the Teams tab. Any line that can't be read stays in the box with the reason, so you can fix it.
+- On any match that hasn't started:
+  - **Edit** changes the teams or its position in the queue (1 = next).
+  - **⇄** swaps home and away.
+  - **✕** deletes it.
+  - **↑ ↓ / Play next** reorders it.
+- **Fixture check** shows matches per team, pairings not scheduled yet, and pairings scheduled more than once/twice. Uneven fixtures are allowed: the table counts whatever is played.
+- **Regenerate unplayed matches** keeps every played result and schedules exactly the meetings still owed. **Delete all unplayed matches** clears the queue so you can start again.
+- Played and live matches can't be changed here. Use **Edit** / **Un-play** on their result instead.
 
 **During the league** (Live scoring tab)
 - Each board shows its **Next up** match. Click **▶ Start on Board 1/2**, or pick a different one from the list.

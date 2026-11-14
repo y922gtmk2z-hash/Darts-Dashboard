@@ -309,3 +309,16 @@ dialog::backdrop { background: rgba(3, 6, 12, 0.72); backdrop-filter: blur(3px);
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- fixture editor ---------- */
+.fixture-tools { margin-bottom: 1.25rem; }
+.add-fixture { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 0.5rem; align-items: center; }
+.edit-fixture { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0.75rem; align-items: center; }
+.edit-fixture > span { color: var(--faint); padding-top: 0.6rem; }
+.bulk-fixtures { margin-top: 0.75rem; }
+.bulk-fixtures summary { cursor: pointer; color: var(--accent); font-weight: 600; padding: 0.3rem 0; }
+.bulk-fixtures form { display: grid; gap: 0.5rem; margin-top: 0.4rem; }
+.bulk-fixtures form button { justify-self: start; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 0.15rem 0.6rem; font-size: 0.85rem; }
+.chip b { color: var(--accent); margin-left: 0.2rem; }
