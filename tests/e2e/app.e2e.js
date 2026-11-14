@@ -326,6 +326,22 @@ test('TV insights: stakes line, next-up preview and the chart / head-to-head / s
   await ctx.close();
 });
 
+test('TV rotation is switched on from admin Settings (no ?rotate needed) and a score brings back the live screen', { skip }, async () => {
+  const s = T.startMatch(leagueState(8, 20), T.nextUp(leagueState(8, 20))[1].id, 1);
+  const { ctx, admin, tv, errors } = await openPair({ state: s });
+  const view = () => tv.evaluate(() => document.querySelector('main')?.className.match(/view-(\w+)/)?.[1]);
+  await tv.waitForTimeout(1500);
+  assert.equal(await view(), 'auto'); // off by default
+  await admin.click('.tabs [data-tab="settings"]');
+  await admin.selectOption('#cfg-rotate', '10');
+  await tv.waitForFunction(() => !/view-auto/.test(document.querySelector('main')?.className ?? ''), null, { timeout: 13000 });
+  // A leg scored on the admin page sends the TV straight back to the live screen.
+  await admin.keyboard.press('q');
+  await tv.waitForFunction(() => /view-auto/.test(document.querySelector('main')?.className ?? ''));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the final waits for the 3rd place play-off', { skip }, async () => {
   let s = loadDemoTeams(T.createTournament({ thirdPlace: true }), 4);
   s = simulateUntil(s, (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done'), seededRandom(5));

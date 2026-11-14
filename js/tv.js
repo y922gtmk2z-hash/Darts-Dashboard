@@ -13,7 +13,8 @@ const H = 1080;
 const params = new URLSearchParams(location.search);
 const PREVIEW = params.has('preview');
 const PINNED = ['table', 'fixtures', 'bracket', 'chart', 'grid', 'stats'].includes(params.get('view')) ? params.get('view') : null;
-const ROTATE = Math.max(0, Number(params.get('rotate')) || 0);
+// ?rotate=N in the address overrides the admin setting (Settings → TV screens).
+const URL_ROTATE = params.has('rotate') ? Math.max(0, Number(params.get('rotate')) || 0) : null;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -46,15 +47,28 @@ function viewsFor(s) {
 }
 function currentView(s) {
   if (PINNED) return PINNED;
-  if (!ROTATE) return 'auto';
+  if (!rotateSeconds(s)) return 'auto';
   const v = viewsFor(s);
   return v[rotateIndex % v.length];
 }
-if (ROTATE && !PINNED) {
-  setInterval(() => {
+/** Seconds per screen, 0 = no rotation. The admin preview pane never rotates. */
+function rotateSeconds(s) {
+  if (PREVIEW || PINNED) return 0;
+  return URL_ROTATE ?? s?.config?.tvRotate ?? 0;
+}
+let rotateTimer = 0;
+let rotateEvery = 0;
+/** (Re)start the rotation timer; `restart` gives the current screen its full time. */
+function scheduleRotation({ restart = false } = {}) {
+  const secs = rotateSeconds(store.get());
+  if (secs === rotateEvery && !restart) return;
+  clearInterval(rotateTimer);
+  rotateEvery = secs;
+  if (!secs) return;
+  rotateTimer = setInterval(() => {
     rotateIndex++;
     render({ transition: true });
-  }, ROTATE * 1000);
+  }, secs * 1000);
 }
 
 // ---------------------------------------------------------------- change tracking (for animations)
@@ -728,11 +742,14 @@ setInterval(() => { beat(); updateLink(); }, 2000);
 store.subscribe((s) => {
   if (!s) return render();
   const changes = trackChanges(s);
-  // A score change brings a rotating screen back to the live view.
-  if (ROTATE && !PINNED && (changes.bumps.size || changes.fresh.length)) rotateIndex = 0;
+  // A score change brings a rotating screen back to the live view, for a full turn.
+  const scored = changes.bumps.size || changes.fresh.length;
+  if (rotateSeconds(s) && scored) rotateIndex = 0;
+  scheduleRotation({ restart: !!scored });
   render({ changes });
 });
 
 if (store.get()) render({ changes: trackChanges(store.get()) });
 else render();
+scheduleRotation();
 registerServiceWorker();

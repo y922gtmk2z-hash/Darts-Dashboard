@@ -195,7 +195,9 @@ These can't be tested automatically, so do them once on the actual equipment:
 
 ## 6. TV options
 
-Add these to the TV address:
+**Rotating screens:** in admin **Settings → TV screens**, choose *Rotate … every 20 s* (or another interval). The TV starts cycling straight away, no address changes needed, and the setting is saved with the tournament. A scored leg or finished match always brings the TV back to the live screen for a full turn.
+
+You can also add these to the TV address (they override the setting):
 
 | URL | Shows |
 | --- | --- |
@@ -206,9 +208,9 @@ Add these to the TV address:
 | `index.html?view=stats` | 3-dart averages (best average, best single match, on the up) and streaks & records |
 | `index.html?view=fixtures` | Up next and results |
 | `index.html?view=bracket` | The knockout bracket (during the league: "if it ended now") |
-| `index.html?rotate=15` | Cycles through views every 15 seconds, jumping back to the live view when a score changes |
+| `index.html?rotate=15` | Cycles through views every 15 seconds, jumping back to the live view when a score changes (`?rotate=0` = never rotate, whatever the setting) |
 
-With `rotate`, the league cycles live → table → chart → head to head → stats → fixtures (the chart and stats join once there are results); the knockout cycles live → table → stats → fixtures; after the final it cycles champion → bracket → table → chart → stats.
+When rotating, the league cycles live → table → chart → head to head → stats → fixtures (the chart and stats join once there are results); the knockout cycles live → table → stats → fixtures; after the final it cycles champion → bracket → table → chart → stats.
 
 The TV is designed for 1920×1080. On other screen shapes it scales down and adds black bars, so nothing is ever cut off or scrolled. With more than 10 teams the league table takes the full height so it stays readable.
 
