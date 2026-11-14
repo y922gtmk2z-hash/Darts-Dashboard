@@ -219,6 +219,8 @@ When rotating, the league cycles live → table → chart → head to head → t
 
 **When a match finishes** the TV shows the result over whatever screen is up for about 6 seconds (*Checkout Charlies beat Bust & Found 2–0 · up to 3rd ▲*, or *through to the final*), then calls the next pair for that board: **To the oche · Board 1** with both teams and players, for about 7 seconds. The final goes straight to the champion screen.
 
+**When you start the knockout** the TV plays the draw (about 13 seconds): *The knockout draw · Semi-finals*, then Semi-final 1 (seed 1 v seed 4) and Semi-final 2 (seed 2 v seed 3) come in one after the other with players and seeds, and finally *Winners meet in the final*. Then it carries on with the knockout screens.
+
 The TV is designed for 1920×1080. On other screen shapes it scales down and adds black bars, so nothing is ever cut off or scrolled. With more than 10 teams the league table takes the full height so it stays readable.
 
 ---

@@ -549,3 +549,19 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 .tp-meet strong { font-size: 34px; color: var(--text); margin-right: 8px; }
 .tp-meet i { min-width: 0; height: 40px; font-size: 22px; }
 .tp-meet em { font-style: normal; color: var(--faint); font-size: 19px; }
+
+/* ---------- the knockout draw (overlay when the knockout starts) ---------- */
+.ov-card.draw { gap: 22px; padding-bottom: 46px; }
+.dr-title { font-size: 76px; font-weight: 900; line-height: 1; }
+.dr-match { display: grid; gap: 10px; padding: 18px 0 8px; border-top: 1px solid var(--line); }
+.dr-label { font-size: 24px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.dr-pair { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 40px; }
+.dr-pair em { font-style: normal; font-size: 48px; color: var(--faint); }
+.dr-team { display: grid; gap: 6px; min-width: 0; }
+.dr-team.h { justify-items: end; text-align: right; }
+.dr-team.a { justify-items: start; text-align: left; }
+.dr-team strong { font-size: 70px; font-weight: 900; line-height: 1.02; overflow-wrap: anywhere; }
+.dr-players { font-size: 28px; color: var(--muted); }
+#overlay.show .dr-match, #overlay.show .dr-final { animation: dr-in 0.8s cubic-bezier(.2, .8, .2, 1) var(--d) both; }
+@keyframes dr-in { from { opacity: 0; transform: translateY(30px) scale(0.97); } }
+@media (prefers-reduced-motion: reduce) { #overlay.show .dr-match, #overlay.show .dr-final { animation: none; } }

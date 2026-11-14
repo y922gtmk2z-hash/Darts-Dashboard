@@ -119,8 +119,9 @@ function trackChanges(s) {
   const finished = fresh.map((id) => ({ id, board: lastBoards.get(id) ?? T.fixtureById(s, id)?.plannedBoard ?? null }));
 
   const phaseChanged = prevPhase !== null && prevPhase !== s.phase;
+  const knockoutStarted = prevPhase === 'league' && s.phase === 'knockout';
   prevPhase = s.phase;
-  return { bumps, rows, fresh, finished, phaseChanged };
+  return { bumps, rows, fresh, finished, phaseChanged, knockoutStarted };
 }
 
 // ---------------------------------------------------------------- render
@@ -761,6 +762,7 @@ const overlay = (() => {
   let busy = false;
   const RESULT_MS = 6500;
   const CALL_MS = 7500;
+  const DRAW_MS = 13000;
 
   function resultHTML(s, f) {
     const r = I.resultSummary(s, f);
@@ -790,6 +792,28 @@ const overlay = (() => {
     </div>`;
   }
 
+  /** The semi-final draw: each pairing comes in turn (CSS delays), then the final. */
+  function drawHTML(s) {
+    const semis = ['SF1', 'SF2'].map((id) => T.fixtureById(s, id)).filter((f) => f?.homeId && f?.awayId);
+    if (semis.length < 2) return '';
+    const seed = (id) => (s.seeds ?? []).indexOf(id) + 1;
+    const team = (id, side) => `<div class="dr-team ${side}">
+      <span class="tp-seed">Seed ${seed(id)}</span>
+      <strong>${esc(T.teamName(s, id))}</strong>
+      ${playersText(s, id) ? `<span class="dr-players">${esc(playersText(s, id))}</span>` : ''}
+    </div>`;
+    const extra = s.config.thirdPlace ? ' · losers play for 3rd place' : '';
+    return `<div class="ov-card draw">
+      <div class="ov-kicker">The knockout draw</div>
+      <div class="dr-title">Semi-finals</div>
+      ${semis.map((f, i) => `<div class="dr-match" style="--d:${1.4 + i * 2.6}s">
+        <span class="dr-label">${esc(stageName(f))} · ${esc(legsFormat(s.config.bestOf.semi))}</span>
+        <div class="dr-pair">${team(f.homeId, 'h')}<em>v</em>${team(f.awayId, 'a')}</div>
+      </div>`).join('')}
+      <div class="ov-detail dr-final" style="--d:7s">Winners meet in the final · ${esc(legsFormat(s.config.bestOf.final))}${esc(extra)}</div>
+    </div>`;
+  }
+
   function next() {
     if (busy) return;
     const item = queue.shift();
@@ -804,6 +828,8 @@ const overlay = (() => {
       // The final hands over to the champion screen instead.
       if (f && f.status === 'done' && f.stage !== 'final') html = resultHTML(s, f);
       if (item.board) queue.unshift({ kind: 'call', board: item.board });
+    } else if (item.kind === 'draw') {
+      html = s.phase === 'knockout' ? drawHTML(s) : '';
     } else {
       html = callHTML(s, item.board);
     }
@@ -815,12 +841,16 @@ const overlay = (() => {
       busy = false;
       if (!queue.length) el.className = '';
       setTimeout(next, queue.length ? 0 : 400);
-    }, item.kind === 'result' ? RESULT_MS : CALL_MS);
+    }, item.kind === 'result' ? RESULT_MS : item.kind === 'draw' ? DRAW_MS : CALL_MS);
   }
 
   return {
     result(id, board) {
       queue.push({ kind: 'result', id, board });
+      next();
+    },
+    draw() {
+      queue.push({ kind: 'draw' });
       next();
     },
   };
@@ -1041,6 +1071,7 @@ store.subscribe((s) => {
   scheduleRotation({ restart: !!scored });
   render({ changes });
   for (const x of changes.finished) overlay.result(x.id, x.board);
+  if (changes.knockoutStarted) overlay.draw();
 });
 
 if (store.get()) render({ changes: trackChanges(store.get()) });
