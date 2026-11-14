@@ -178,3 +178,39 @@ test('finish estimate: pace of the evening, knockout added, null without data', 
   assert.equal(e2.ms, ((15 + 60) / 2 + 40) * MIN);
   assert.equal(I.finishEstimate({ ...s, phase: 'complete' }), null);
 });
+
+test('result summary: league move, clinch and knockout wording', () => {
+  const fx = [result('A', 'B', 2, 0), result('C', 'D', 2, 0), result('B', 'C', 2, 1)];
+  const s = state(['A', 'B', 'C', 'D'], fx);
+  const r = I.resultSummary(s, fx[2]);
+  assert.equal(r.headline, 'B win 2–1');
+  assert.equal(r.detail, 'B stay 3rd · C stay 2nd'); // A and C stay ahead on leg difference
+  assert.equal(I.resultSummary(s, { ...result('A', 'B', 1, 2, 'semi') }).detail, 'B are through to the final');
+  assert.equal(I.resultSummary(s, { ...result('A', 'B', 2, 0, 'final') }).headline, 'A are the champions!');
+});
+
+test('team spotlight: results, averages, next match', () => {
+  const fx = [{ ...result('A', 'B', 2, 1), homeAvg: 50, awayAvg: 40 }, { ...result('C', 'A', 2, 0), homeAvg: 55, awayAvg: 45 }, pending('A', 'C')];
+  const sp = I.teamSpotlight(state(['A', 'B', 'C'], fx), 'A');
+  assert.equal(sp.results.length, 2);
+  assert.deepEqual(sp.results.map((r) => r.won), [true, false]);
+  assert.deepEqual(sp.averages, [50, 45]);
+  assert.equal(sp.next, fx[2]);
+  assert.equal(sp.row.points, 3);
+});
+
+test('tale of the tape: rows, better side and earlier meetings', () => {
+  const fx = [
+    { ...result('A', 'B', 2, 0), homeAvg: 60, awayAvg: 40 }, result('B', 'A', 2, 1), result('A', 'C', 2, 0), result('B', 'C', 2, 0),
+    result('C', 'D', 2, 0), result('D', 'A', 0, 2),
+  ];
+  const s = { ...state(['A', 'B', 'C', 'D'], [...fx, { ...pending('A', 'B'), id: 'SF1', stage: 'semi' }]), seeds: ['A', 'B', 'C', 'D'], phase: 'knockout' };
+  const tape = I.taleOfTheTape(s, s.fixtures.at(-1));
+  assert.deepEqual(tape.seeds, { home: 1, away: 2 });
+  const row = (l) => tape.rows.find((r) => r.label === l);
+  assert.equal(row('League finish').better, 'home');
+  assert.equal(row('3-dart average').home, '60.00');
+  assert.equal(row('3-dart average').better, 'home');
+  assert.equal(tape.meetings.length, 2);
+  assert.deepEqual(tape.meetingsWon, { home: 1, away: 1 });
+});

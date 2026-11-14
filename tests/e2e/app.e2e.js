@@ -319,7 +319,7 @@ test('TV insights: stakes line, next-up preview and the chart / head-to-head / s
   for (const [view, sel] of [['chart', 'svg.pos-chart path.ln'], ['grid', 'table.h2h td i'], ['stats', '.stats-grid .bars li']]) {
     await tv.goto(`${base}/index.html?view=${view}`);
     await tv.waitForSelector(sel);
-    if (view === 'chart') assert.equal(await tv.locator('svg.pos-chart path.ln').count(), 8);
+    if (view === 'chart') assert.equal(await tv.locator('svg.pos-chart path.ln:not(.now-seg)').count(), 8);
     if (view === 'grid') assert.equal(await tv.locator('table.h2h tbody tr').count(), 8);
   }
   assert.deepEqual(errors, []);
@@ -367,6 +367,62 @@ test('live scores stay along the bottom of every other TV screen and update with
   await tv.waitForFunction((fid) => document.querySelector(`.live-strip [data-legs="${fid}-home"]`)?.textContent === '1', id);
   // The free board shows what's next.
   assert.match(await tv.textContent('.live-strip .ls-slot.idle'), /Next up|Free/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the race-for-the-top chart ends on a live "Now" point that moves with each leg', { skip }, async () => {
+  const base0 = leagueState(8, 20);
+  const { ctx, admin, tv, errors } = await openPair({ state: base0 });
+  await tv.goto(`${base}/index.html?view=chart`);
+  await tv.waitForSelector('svg.pos-chart');
+  assert.equal(await tv.locator('svg.pos-chart .axis.now').count(), 0); // nothing in play
+  // Start the next match and give the away team a leg: the chart gains "Now" and
+  // the label order matches the live table.
+  const f = T.nextUp(base0)[1];
+  await admin.click(`[data-action="start"][data-id="${f.id}"][data-board="1"]`);
+  await admin.keyboard.press('a');
+  await tv.waitForSelector('svg.pos-chart .axis.now');
+  const live = T.liveStandings(T.adjustLegs(T.startMatch(base0, f.id, 1), f.id, 'away', 1));
+  const labels = await tv.$$eval('svg.pos-chart text.lbl', (els) => els.map((e) => e.textContent.replace(/●/g, '').trim()));
+  assert.deepEqual(labels, live.map((r) => `${r.position}. ${r.name}`));
+  assert.equal(await tv.locator('svg.pos-chart .live-mark').count(), 2);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('finishing a match shows the result banner on the TV, then calls the next pair to the oche', { skip }, async () => {
+  let s = leagueState(8, 20);
+  const id = T.nextUp(s)[1].id;
+  s = T.adjustLegs(T.startMatch(s, id, 1), id, 'home', 1);
+  const f = T.fixtureById(s, id);
+  const { ctx, admin, tv, errors } = await openPair({ state: s });
+  await tv.waitForSelector('.live-card:not(.idle)');
+  await admin.click('.kbd-help');
+  await admin.keyboard.press('q'); // winning leg → confirm dialog
+  await admin.waitForSelector('dialog[open]');
+  await admin.keyboard.press('Enter');
+  await tv.waitForSelector('#overlay.show .ov-card.result');
+  assert.ok((await tv.textContent('#overlay .ov-big')).includes(T.teamName(s, f.homeId)));
+  assert.match(await tv.textContent('#overlay .ov-mid'), /2–0/);
+  await tv.waitForSelector('#overlay.show .ov-card.call', { timeout: 10000 });
+  assert.match(await tv.textContent('#overlay .ov-kicker'), /To the oche · Board 1/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('team spotlight and knockout tale-of-the-tape screens', { skip }, async () => {
+  let s = simulateUntil(leagueState(8), (x) => x.phase === 'knockout', seededRandom(5));
+  s = T.startMatch(s, 'SF1', 1);
+  const { ctx, tv, errors } = await openPair({ state: s });
+  await tv.goto(`${base}/index.html?view=tape`);
+  await tv.waitForSelector('.tape-grid.n2 .tape');
+  assert.equal(await tv.locator('.tape .tp-seed').count(), 4);
+  assert.match(await tv.textContent('.tape:first-child .tp-head'), /Semi-final 1.*LIVE/s);
+  await tv.goto(`${base}/index.html?view=team`);
+  await tv.waitForSelector('.spot .spot-who h2');
+  assert.equal(await tv.textContent('.spot .spot-who h2'), T.teamName(s, s.seeds[0])); // knockout: the four still in, seed 1 first
+  assert.match(await tv.textContent('.spot .panel-title .hint'), /1 of 4/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

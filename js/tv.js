@@ -12,7 +12,7 @@ const W = 1920;
 const H = 1080;
 const params = new URLSearchParams(location.search);
 const PREVIEW = params.has('preview');
-const PINNED = ['table', 'fixtures', 'bracket', 'chart', 'grid', 'stats'].includes(params.get('view')) ? params.get('view') : null;
+const PINNED = ['table', 'fixtures', 'bracket', 'chart', 'grid', 'stats', 'team', 'tape'].includes(params.get('view')) ? params.get('view') : null;
 // ?rotate=N in the address overrides the admin setting (Settings → TV screens).
 const URL_ROTATE = params.has('rotate') ? Math.max(0, Number(params.get('rotate')) || 0) : null;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -29,6 +29,8 @@ let scale = 1;
 function fit() {
   scale = Math.min(innerWidth / W, innerHeight / H);
   stage.style.transform = `translate(-50%, -50%) scale(${scale})`;
+  const ov = document.getElementById('overlay');
+  if (ov) ov.style.transform = stage.style.transform;
 }
 addEventListener('resize', fit);
 fit();
@@ -40,10 +42,13 @@ function viewsFor(s) {
   if (!s || s.phase === 'setup') return ['auto'];
   const hasChart = I.finishedLeague(s).length >= 2;
   const hasStats = s.fixtures.some((f) => f.status === 'done');
-  const views = s.phase === 'league' ? ['auto', 'table', 'chart', 'grid', 'stats', 'fixtures']
-    : s.phase === 'knockout' ? ['auto', 'table', 'stats', 'fixtures']
-      : ['auto', 'bracket', 'table', 'chart', 'stats'];
-  return views.filter((v) => (v !== 'chart' || hasChart) && (v !== 'stats' || hasStats));
+  // The knockout gets its own set: tale of the tape for the next match(es), the
+  // bracket, the final league table, the four teams still in, and stats.
+  const views = s.phase === 'league' ? ['auto', 'table', 'chart', 'grid', 'team', 'stats', 'fixtures']
+    : s.phase === 'knockout' ? ['auto', 'tape', 'bracket', 'table', 'team', 'stats']
+      : ['auto', 'bracket', 'table', 'chart', 'team', 'stats'];
+  return views.filter((v) => (v !== 'chart' || hasChart) && (v !== 'stats' || hasStats)
+    && (v !== 'tape' || pendingKnockout(s).length > 0) && (v !== 'team' || hasStats));
 }
 function currentView(s) {
   if (PINNED) return PINNED;
@@ -67,6 +72,7 @@ function scheduleRotation({ restart = false } = {}) {
   if (!secs) return;
   rotateTimer = setInterval(() => {
     rotateIndex++;
+    if (currentView(store.get()) === 'team') spotlightIndex++;
     render({ transition: true });
   }, secs * 1000);
 }
@@ -74,6 +80,7 @@ function scheduleRotation({ restart = false } = {}) {
 // ---------------------------------------------------------------- change tracking (for animations)
 
 let prevLegs = new Map(); // fixtureId -> "h-a"
+let prevBoards = new Map(); // live fixtureId -> board
 let prevPositions = null; // teamId -> position
 const movement = new Map(); // teamId -> {dir, until}
 let prevPhase = null;
@@ -92,6 +99,9 @@ function trackChanges(s) {
     }
   }
   prevLegs = legs;
+  const boards = new Map(s.fixtures.filter((f) => f.status === 'live').map((f) => [f.id, f.board]));
+  const lastBoards = prevBoards;
+  prevBoards = boards;
 
   const rows = T.liveStandings(s);
   const now = Date.now();
@@ -106,10 +116,11 @@ function trackChanges(s) {
   const done = new Set(s.fixtures.filter((f) => f.status === 'done').map((f) => f.id));
   const fresh = prevDone ? [...done].filter((id) => !prevDone.has(id)) : [];
   prevDone = done;
+  const finished = fresh.map((id) => ({ id, board: lastBoards.get(id) ?? T.fixtureById(s, id)?.plannedBoard ?? null }));
 
   const phaseChanged = prevPhase !== null && prevPhase !== s.phase;
   prevPhase = s.phase;
-  return { bumps, rows, fresh, phaseChanged };
+  return { bumps, rows, fresh, finished, phaseChanged };
 }
 
 // ---------------------------------------------------------------- render
@@ -196,9 +207,11 @@ function body(s, view, ch) {
 
 function viewBody(s, view, ch, strip) {
   switch (view) {
-    case 'table': return `<section class="panel full">${panelTitle('League table')}${tableHTML(s, ch.rows, { full: true, avail: 790 - (strip ? STRIP_H : 0) })}</section>`;
+    case 'team': return spotlightHTML(s, strip);
+    case 'tape': return tapeView(s);
+    case 'table': return `<section class="panel full">${panelTitle(s.phase === 'league' ? 'League table' : 'Final league table')}${tableHTML(s, ch.rows, { full: true, avail: 790 - (strip ? STRIP_H : 0) })}</section>`;
     case 'fixtures': return fixturesView(s, ch);
-    case 'chart': return `<section class="panel full">${panelTitle('Race for the top', `<span class="hint">League position after each match · top ${s.config.qualifiers} highlighted</span>`)}${positionChartHTML(s)}</section>`;
+    case 'chart': return `<section class="panel full">${panelTitle('Race for the top', `<span class="hint">League position after each match${T.liveFixtures(s).some((f) => f.stage === 'league') ? ' · <span class="now-key">- - Now</span> = as it stands' : ''} · top ${s.config.qualifiers} highlighted</span>`)}${positionChartHTML(s)}</section>`;
     case 'grid': return `<section class="panel full">${panelTitle('Head to head', '<span class="hint">Read across: the row team’s score first</span>')}${gridHTML(s, ch.rows, strip ? STRIP_H : 0)}</section>`;
     case 'stats': return statsView(s, strip);
     case 'bracket': return `<section class="panel full">${panelTitle(s.phase === 'league' ? 'Knockout · if the league ended now' : 'Knockout')}${bracketHTML(s, ch.rows)}</section>`;
@@ -495,40 +508,64 @@ const CHART_COLORS = ['#3987e5', '#d95926', '#199e70', '#e66767'];
 
 function positionChartHTML(s) {
   const { fixtures, steps } = I.positionHistory(s);
-  if (steps.length < 2) return '<p class="empty">The chart appears after a couple of results.</p>';
+  // While league matches are being played, the line ends on a "Now" point: the
+  // live table as it stands (provisional), joined by a dashed segment.
+  const liveRows = T.liveStandings(s);
+  const playing = new Set(liveRows.filter((r) => r.live).map((r) => r.teamId));
+  const hasNow = s.phase === 'league' && playing.size > 0;
+  const now = new Map(liveRows.map((r) => [r.teamId, r.position]));
+  const pts = hasNow ? [...steps, now] : steps;
+  if (pts.length < 2) return '<p class="empty">The chart appears after a couple of results.</p>';
   const n = s.teams.length;
   const q = s.config.qualifiers;
   const VW = 1760;
   const VH = 800;
   const L = 70;
-  const R = 380;
+  const R = 400;
   const TOP = 24;
   const B = 64;
   const pw = VW - L - R;
   const ph = VH - TOP - B;
-  const x = (i) => L + (steps.length === 1 ? pw : (i / (steps.length - 1)) * pw);
+  // The "Now" point gets its own space after the last result, so live moves stand out.
+  const span = hasNow ? pw - 90 : pw;
+  const x = (i) => (i >= steps.length ? L + pw : L + (steps.length === 1 ? 0 : (i / (steps.length - 1)) * span));
   const y = (p) => TOP + (n === 1 ? 0 : ((p - 1) / (n - 1)) * ph);
-  const last = steps[steps.length - 1];
+  const last = pts[pts.length - 1];
   const order = [...last].sort((a, b) => a[1] - b[1]).map(([id]) => id);
-  const color = new Map(order.slice(0, q).map((id, i) => [id, CHART_COLORS[i]]));
+  // Colours follow the team, not the rank: fixed by the last finished results, so a
+  // live swing doesn't repaint lines. A team climbing into the top 4 live takes the
+  // colour of the team it pushed out.
+  const settled = steps.length ? [...steps[steps.length - 1]].sort((a, b) => a[1] - b[1]).map(([id]) => id) : order;
+  const base = new Map(settled.slice(0, q).map((id, i) => [id, CHART_COLORS[i]]));
+  const top = order.slice(0, q);
+  const spare = [...base].filter(([id]) => !top.includes(id)).map(([, c]) => c);
+  const color = new Map(top.map((id) => [id, base.get(id) ?? spare.shift()]));
   const path = (id) => steps.map((m, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(m.get(id)).toFixed(1)}`).join('');
+  const nowSeg = (id) => (hasNow && steps.length
+    ? `M${x(steps.length - 1).toFixed(1)},${y(steps[steps.length - 1].get(id)).toFixed(1)}L${x(pts.length - 1).toFixed(1)},${y(now.get(id)).toFixed(1)}`
+    : '');
   const grid = Array.from({ length: n }, (_, i) => `<line class="grid" x1="${L}" x2="${L + pw}" y1="${y(i + 1)}" y2="${y(i + 1)}"/>
     <text class="axis" x="${L - 18}" y="${y(i + 1)}" text-anchor="end" dominant-baseline="central">${i + 1}</text>`).join('');
   const cutY = n > q ? (y(q) + y(q + 1)) / 2 : null;
   const every = Math.max(1, Math.ceil(steps.length / 12));
   const ticks = steps.map((_, i) => i).filter((i) => (i + 1) % every === 0 || i === 0)
-    .map((i) => `<text class="axis" x="${x(i)}" y="${TOP + ph + 36}" text-anchor="middle">${i + 1}</text>`).join('');
-  const grey = order.slice(q).map((id) => `<path class="ln dim" d="${path(id)}"/>`).join('');
+    .filter((i) => !hasNow || x(pts.length - 1) - x(i) > 50) // keep clear of the "Now" label
+    .map((i) => `<text class="axis" x="${x(i)}" y="${TOP + ph + 36}" text-anchor="middle">${i + 1}</text>`).join('')
+    + (hasNow ? `<text class="axis now" x="${x(pts.length - 1)}" y="${TOP + ph + 36}" text-anchor="middle">Now</text>` : '');
+  const nowLine = hasNow ? `<line class="now-line" x1="${x(pts.length - 1)}" x2="${x(pts.length - 1)}" y1="${TOP - 10}" y2="${TOP + ph + 10}"/>` : '';
+  const grey = order.slice(q).map((id) => `<path class="ln dim" d="${path(id)}"/>${hasNow ? `<path class="ln dim now-seg" d="${nowSeg(id)}"/>` : ''}`).join('');
   const lit = order.slice(0, q).reverse().map((id) => `<path class="ln" d="${path(id)}" stroke="${color.get(id)}"/>
-    <circle cx="${x(steps.length - 1)}" cy="${y(last.get(id))}" r="8" fill="${color.get(id)}" class="end"/>`).join('');
+    ${hasNow ? `<path class="ln now-seg" d="${nowSeg(id)}" stroke="${color.get(id)}"/>` : ''}
+    <circle cx="${x(pts.length - 1)}" cy="${y(last.get(id))}" r="8" fill="${color.get(id)}" class="end ${playing.has(id) ? 'live' : ''}"/>`).join('');
   const labels = order.map((id) => {
     const p = last.get(id);
     const c = color.get(id);
-    return `<text class="lbl ${c ? '' : 'dim'}" x="${L + pw + 24}" y="${y(p)}" dominant-baseline="central">${p}. ${esc(T.teamName(s, id))}</text>`;
+    return `<text class="lbl ${c ? '' : 'dim'}" x="${L + pw + 24}" y="${y(p)}" dominant-baseline="central">${p}. ${esc(T.teamName(s, id))}${playing.has(id) ? '<tspan class="live-mark" dx="10">●</tspan>' : ''}</text>`;
   }).join('');
-  return `<svg class="pos-chart" viewBox="0 0 ${VW} ${VH}" role="img" aria-label="League position of each team after each of ${fixtures.length} matches">
+  return `<svg class="pos-chart" viewBox="0 0 ${VW} ${VH}" role="img" aria-label="League position of each team after each of ${fixtures.length} matches${hasNow ? ', and now with matches in progress' : ''}">
     ${grid}
     ${cutY ? `<line class="cut" x1="${L}" x2="${L + pw}" y1="${cutY}" y2="${cutY}"/>` : ''}
+    ${nowLine}
     ${ticks}<text class="axis title" x="${L + pw / 2}" y="${VH - 4}" text-anchor="middle">League matches played</text>
     ${grey}${lit}${labels}
   </svg>`;
@@ -588,6 +625,206 @@ function statsView(s, strip = false) {
     <div class="panel">${panelTitle('Streaks & records')}${recPanel}</div>
   </section>`;
 }
+
+// ---------- team spotlight
+
+let spotlightIndex = 0;
+if (PINNED === 'team') setInterval(() => { spotlightIndex++; render({ transition: true }); }, 15000);
+
+/** Teams to feature: everyone in table order; from the knockout on, the four still in. */
+function spotlightTeams(s) {
+  if (s.phase !== 'league' && s.seeds?.length) return s.seeds.filter((id) => T.teamById(s, id));
+  return T.liveStandings(s).map((r) => r.teamId);
+}
+
+function sparklineHTML(values) {
+  if (values.length < 2) return '<p class="empty small">The line appears after two matches with an average recorded.</p>';
+  const VW = 860;
+  const VH = 230;
+  const P = { l: 20, r: 150, t: 44, b: 30 };
+  const lo = Math.floor(Math.min(...values) - 3);
+  const hi = Math.ceil(Math.max(...values) + 3);
+  const x = (i) => P.l + (i / (values.length - 1)) * (VW - P.l - P.r);
+  const y = (v) => P.t + (1 - (v - lo) / (hi - lo)) * (VH - P.t - P.b);
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  const pts = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const last = values[values.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${VW} ${VH}" role="img" aria-label="3-dart average in each match: ${values.map(fmtAvg).join(', ')}">
+    <line class="mean" x1="${P.l}" x2="${VW - P.r}" y1="${y(avg)}" y2="${y(avg)}"/>
+    <text class="mean-lbl" x="${VW - P.r + 10}" y="${y(avg)}" dominant-baseline="central">avg ${fmtAvg(avg)}</text>
+    <polyline points="${pts}"/>
+    ${values.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="${i === values.length - 1 ? 9 : 6}"/>`).join('')}
+    <text class="last" x="${x(values.length - 1)}" y="${y(last) - 18}" text-anchor="middle">${fmtAvg(last)}</text>
+  </svg>`;
+}
+
+function spotlightHTML(s, strip) {
+  const ids = spotlightTeams(s);
+  if (!ids.length) return '<section class="panel full"><p class="empty">No teams yet.</p></section>';
+  const k = spotlightIndex % ids.length;
+  const id = ids[k];
+  const sp = I.teamSpotlight(s, id);
+  const r = sp.row;
+  const name = (x) => esc(T.teamName(s, x));
+  const players = playersText(s, id);
+  const seed = (s.seeds ?? []).indexOf(id) + 1;
+  const tile = (label, value) => `<div class="tile"><b class="num">${value}</b><span>${label}</span></div>`;
+  let now = '';
+  if (sp.live) {
+    const home = sp.live.homeId === id;
+    now = `<div class="spot-now live"><span class="pill live">● LIVE · ${esc(s.config.boardNames[sp.live.board - 1])}</span>
+      v <strong>${name(home ? sp.live.awayId : sp.live.homeId)}</strong>
+      <b class="num">${home ? sp.live.homeLegs : sp.live.awayLegs}–${home ? sp.live.awayLegs : sp.live.homeLegs}</b></div>`;
+  } else if (sp.next) {
+    now = `<div class="spot-now"><span class="pill">Next</span> v <strong>${name(sp.next.homeId === id ? sp.next.awayId : sp.next.homeId)}</strong> <em>${esc(stageName(sp.next))}</em></div>`;
+  } else {
+    now = `<div class="spot-now"><em>${s.phase === 'league' ? 'All league matches played' : 'No more matches'}</em></div>`;
+  }
+  const max = strip ? 5 : 7;
+  const results = [...sp.results].reverse().slice(0, max);
+  return `<section class="spot">
+    <div class="panel spot-main">
+      ${panelTitle('Team spotlight', `<span class="hint">${k + 1} of ${ids.length}</span>`)}
+      <div class="spot-id">
+        <div class="spot-pos"><b>${r ? I.ordinal(r.position) : '–'}</b><span>${s.phase === 'league' ? 'in the table' : seed ? `seed ${seed}` : 'in the league'}</span></div>
+        <div class="spot-who"><h2>${name(id)}</h2>${players ? `<p>${esc(players)}</p>` : ''}</div>
+      </div>
+      ${r ? `<div class="spot-tiles">${tile('Played', r.played)}${tile('Won – lost', `${r.won}–${r.lost}`)}${tile('Points', r.points)}${tile('Leg diff', r.legDiff > 0 ? `+${r.legDiff}` : r.legDiff)}${tile('Average', fmtAvg(r.avg) || '–')}</div>` : ''}
+      <div class="spot-form"><span>Form</span>${(r?.form ?? []).map((x) => `<i class="${x}">${x}</i>`).join('') || '<em>No results yet</em>'}</div>
+      ${now}
+    </div>
+    <div class="panel spot-side">
+      ${panelTitle('3-dart average, match by match')}
+      ${sparklineHTML(sp.averages)}
+      ${panelTitle('Results')}
+      ${results.length ? `<ol class="spot-res">${results.map((x) => `<li><i class="${x.won ? 'W' : 'L'}">${x.won ? 'W' : 'L'}</i><b class="num">${x.forLegs}–${x.againstLegs}</b><span>v ${name(x.opponentId)}</span><em>${esc(stageName(x.f, { short: true }))}${typeof x.avg === 'number' ? ` · ${fmtAvg(x.avg)}` : ''}</em></li>`).join('')}</ol>` : '<p class="empty small">No results yet.</p>'}
+    </div>
+  </section>`;
+}
+
+// ---------- knockout: tale of the tape
+
+/** Knockout matches still to play with both teams known: the semis first, then what follows. */
+function pendingKnockout(s) {
+  const ko = s.fixtures.filter((f) => f.stage !== 'league' && f.status !== 'done' && f.homeId && f.awayId).sort((a, b) => a.order - b.order);
+  const semis = ko.filter((f) => f.stage === 'semi');
+  return semis.length ? semis : ko;
+}
+
+function tapeView(s) {
+  const list = pendingKnockout(s);
+  if (!list.length) return `<section class="panel full">${panelTitle('Knockout')}<p class="empty">Waiting for the next knockout match.</p></section>`;
+  return `<section class="tape-grid n${list.length}">${list.map((f) => tapeCard(s, f)).join('')}</section>`;
+}
+
+function tapeCard(s, f) {
+  const t = I.taleOfTheTape(s, f);
+  const status = f.status === 'live'
+    ? `<span class="pill live">● LIVE · ${esc(s.config.boardNames[f.board - 1])}</span>`
+    : `<span class="pill">Up next</span>`;
+  const side = (which) => {
+    const id = which === 'home' ? f.homeId : f.awayId;
+    const seed = t.seeds[which];
+    return `<div class="tp-team ${which}">
+      ${seed ? `<span class="tp-seed">Seed ${seed}</span>` : ''}
+      <div class="tp-name">${esc(T.teamName(s, id))}</div>
+      <div class="tp-players">${esc(playersText(s, id))}</div>
+      <div class="tp-form">${t.form[which].map((x) => `<i class="${x}">${x}</i>`).join('')}</div>
+    </div>`;
+  };
+  const score = f.status === 'live'
+    ? `<div class="tp-score num"><span data-legs="${f.id}-home">${f.homeLegs}</span>–<span data-legs="${f.id}-away">${f.awayLegs}</span></div>`
+    : '<div class="tp-vs">v</div>';
+  const meet = t.meetings.length
+    ? `<div class="tp-meet"><span>Tonight</span><strong>${t.meetingsWon.home}–${t.meetingsWon.away}</strong>
+        ${t.meetings.map((m) => {
+          const mine = m.homeId === f.homeId ? m.homeLegs : m.awayLegs;
+          const theirs = m.homeId === f.homeId ? m.awayLegs : m.homeLegs;
+          return `<i class="${mine > theirs ? 'W' : 'L'}">${mine}–${theirs}</i>`;
+        }).join('')}<em>(left team's score first)</em></div>`
+    : '<div class="tp-meet"><em>First meeting tonight</em></div>';
+  return `<article class="panel tape">
+    <div class="tp-head"><h2>${esc(stageName(f))}</h2>${status}</div>
+    <div class="tp-top">${side('home')}${score}${side('away')}</div>
+    <div class="tp-rows">${t.rows.map((row) => `<div class="tp-row">
+      <span class="v ${row.better === 'home' ? 'best' : ''}">${esc(row.home)}</span><span class="lbl">${esc(row.label)}</span><span class="v ${row.better === 'away' ? 'best' : ''}">${esc(row.away)}</span>
+    </div>`).join('')}</div>
+    ${meet}
+  </article>`;
+}
+
+// ---------- result banner and "to the oche" call-up (an overlay above every screen)
+
+const overlay = (() => {
+  const el = document.getElementById('overlay');
+  const queue = [];
+  let busy = false;
+  const RESULT_MS = 6500;
+  const CALL_MS = 7500;
+
+  function resultHTML(s, f) {
+    const r = I.resultSummary(s, f);
+    return `<div class="ov-card result">
+      <div class="ov-kicker">Result · ${esc(stageName(f))}</div>
+      <div class="ov-big"><span class="w">${esc(T.teamName(s, r.winnerId))}</span></div>
+      <div class="ov-mid">beat <strong>${esc(T.teamName(s, r.loserId))}</strong> <b class="num">${esc(r.score)}</b></div>
+      ${r.detail ? `<div class="ov-detail">${esc(r.detail)}</div>` : ''}
+    </div>`;
+  }
+
+  function callHTML(s, board) {
+    if (T.liveOnBoard(s, board)) return ''; // already started
+    const next = T.nextUp(s);
+    const f = next[board] ?? next.waiting?.[board];
+    if (!f) return '';
+    const waiting = !next[board];
+    const who = (side) => {
+      const id = side === 'home' ? f.homeId : f.awayId;
+      const p = playersText(s, id);
+      return `<div class="ov-team"><strong>${esc(slotName(s, f, side))}</strong>${p ? `<span>${esc(p)}</span>` : ''}</div>`;
+    };
+    return `<div class="ov-card call">
+      <div class="ov-kicker">To the oche · ${esc(s.config.boardNames[board - 1])}</div>
+      <div class="ov-teams">${who('home')}<em>v</em>${who('away')}</div>
+      <div class="ov-detail">${esc(stageName(f))}${waiting ? ' · after the other board finishes' : ''}</div>
+    </div>`;
+  }
+
+  function next() {
+    if (busy) return;
+    const item = queue.shift();
+    const s = store.get();
+    if (!item || !s) {
+      el.className = '';
+      return;
+    }
+    let html = '';
+    if (item.kind === 'result') {
+      const f = T.fixtureById(s, item.id);
+      // The final hands over to the champion screen instead.
+      if (f && f.status === 'done' && f.stage !== 'final') html = resultHTML(s, f);
+      if (item.board) queue.unshift({ kind: 'call', board: item.board });
+    } else {
+      html = callHTML(s, item.board);
+    }
+    if (!html) return next();
+    busy = true;
+    el.innerHTML = html;
+    el.className = 'show';
+    setTimeout(() => {
+      busy = false;
+      if (!queue.length) el.className = '';
+      setTimeout(next, queue.length ? 0 : 400);
+    }, item.kind === 'result' ? RESULT_MS : CALL_MS);
+  }
+
+  return {
+    result(id, board) {
+      queue.push({ kind: 'result', id, board });
+      next();
+    },
+  };
+})();
 
 // ---------- champion
 
@@ -803,6 +1040,7 @@ store.subscribe((s) => {
   if (rotateSeconds(s) && scored) rotateIndex = 0;
   scheduleRotation({ restart: !!scored });
   render({ changes });
+  for (const x of changes.finished) overlay.result(x.id, x.board);
 });
 
 if (store.get()) render({ changes: trackChanges(store.get()) });
