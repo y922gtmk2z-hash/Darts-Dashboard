@@ -329,11 +329,11 @@ function render() {
   // Text being typed (not yet committed with Enter / leaving the box) survives a redraw.
   const typing = focusSel && active.id && /^(INPUT|TEXTAREA)$/.test(active.tagName) && active.type !== 'checkbox' ? active.value : null;
 
-  const views = { live: viewLive, fixtures: viewFixtures, table: viewTable, teams: viewTeams, settings: viewSettings, backup: viewBackup };
+  const views = { live: viewLive, matchday: viewMatchday, fixtures: viewFixtures, table: viewTable, teams: viewTeams, settings: viewSettings, backup: viewBackup };
   for (const id of drafts.keys()) if (T.fixtureById(s, id)?.status !== 'scheduled') drafts.delete(id);
   for (const id of editing) if (T.fixtureById(s, id)?.status !== 'done') editing.delete(id);
   $('#main').innerHTML = (views[tab] ?? viewLive)(s);
-  if (tab === 'live' && !scrolledToCurrent) {
+  if (tab === 'matchday' && !scrolledToCurrent) {
     const current = $('#main .mcard.live') ?? $('#main .mcard.is-next') ?? $('#main .mcard.todo');
     if (current) {
       scrolledToCurrent = true;
@@ -391,6 +391,123 @@ function renderSaved() {
   el.title = store.lastSavedAt ? new Date(store.lastSavedAt).toLocaleString() : '';
 }
 
+// ---------------------------------------------------------------- view: live scoring
+// Two big board panels for scoring, plus Up next and the table.
+
+function viewLive(s) {
+  if (s.phase === 'setup') {
+    return `<section class="empty-state card">
+      <h2>Nothing to score yet</h2>
+      <p>Add at least ${MIN_TEAMS} teams, then generate the fixtures.</p>
+      <button class="primary big" data-action="tab" data-tab="teams">Go to Teams</button>
+    </section>`;
+  }
+  const next = T.nextUp(s);
+  const cta = phaseCallToAction(s);
+  return `
+    ${cta}
+    <section class="boards">
+      ${[1, 2].map((b) => boardPanel(s, b, next[b], next.waiting?.[b])).join('')}
+    </section>
+    <p class="kbd-help">Keyboard: ${keyHelp(s)} · <kbd>Shift</kbd>+key removes a leg · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</p>
+    <section class="split">
+      <div class="card">
+        <h2>Up next</h2>
+        ${queueList(s, next)}
+      </div>
+      <div class="card">
+        <h2>${s.phase === 'league' ? 'League table' : 'Bracket'}</h2>
+        ${s.phase === 'league' ? standingsTable(s, { compact: true }) : bracketSummary(s)}
+      </div>
+    </section>`;
+}
+
+function boardPanel(s, board, suggested, waiting = null) {
+  const name = esc(s.config.boardNames[board - 1]);
+  const f = T.liveOnBoard(s, board);
+  const k = s.config.keys;
+  const keys = board === 1 ? [k.b1Home, k.b1Away] : [k.b2Home, k.b2Away];
+  if (f) {
+    const need = legsToWinFor(s.config, f.stage);
+    const decided = T.matchIsDecided(s, f.id);
+    const side = (which, key) => {
+      const legs = which === 'home' ? f.homeLegs : f.awayLegs;
+      const id = which === 'home' ? f.homeId : f.awayId;
+      const won = decided && legs === need;
+      return `<div class="side ${won ? 'winner' : ''}">
+        <div class="team-name">${esc(slotName(s, f, which))}</div>
+        <div class="players">${esc(playersText(s, id)) || '&nbsp;'}</div>
+        <div class="legs num" data-legs="${f.id}-${which}">${legs}</div>
+        <div class="pips">${Array.from({ length: need }, (_, i) => `<span class="${i < legs ? 'on' : ''}"></span>`).join('')}</div>
+        <label class="avg-live">3-dart avg
+          <input id="avg-${f.id}-${which}" data-change="avg" data-id="${f.id}" data-side="${which}" inputmode="decimal" autocomplete="off"
+            placeholder="–" value="${esc(fmtAvg(f[`${which}Avg`]))}" aria-label="3-dart average for ${esc(slotName(s, f, which))}"></label>
+        ${f.stage === 'league' ? '<span class="avg-note">Goes in the table when the match is finished</span>' : ''}
+        <div class="leg-btns">
+          <button class="minus" data-action="leg" data-id="${f.id}" data-side="${which}" data-delta="-1" ${legs === 0 ? 'disabled' : ''} aria-label="Remove a leg from ${esc(slotName(s, f, which))}">−</button>
+          <button class="plus" data-action="leg" data-id="${f.id}" data-side="${which}" data-delta="1" ${decided ? 'disabled' : ''} aria-label="Leg to ${esc(slotName(s, f, which))}">+ Leg <kbd>${esc(key.toUpperCase())}</kbd></button>
+        </div>
+      </div>`;
+    };
+    return `<article class="board live ${decided ? 'decided' : ''}">
+      <header><h2>${name}</h2><span class="tag live-tag">LIVE</span><span class="muted">${esc(stageName(f))}</span>
+        <button class="small ghost" data-action="cancel" data-id="${f.id}" title="Take this match off the board (score is cleared)">Cancel match</button></header>
+      <div class="score-row">${side('home', keys[0])}<div class="vs">v</div>${side('away', keys[1])}</div>
+      <footer><span class="muted">${esc(formatLine(s, f))}</span>
+        <button class="primary" data-action="finish" data-id="${f.id}" ${decided ? '' : 'disabled'}>Finish match</button></footer>
+    </article>`;
+  }
+  const options = T.upcoming(s).filter((x) => canStartOn(s, x, board));
+  let inner;
+  if (suggested) {
+    inner = `<p class="muted">Next up</p>
+      <div class="next-teams">${slotBlock(s, suggested, 'home', { cls: 'end' })}<em>v</em>${slotBlock(s, suggested, 'away')}</div>
+      <p class="muted small-text">${esc(stageName(suggested))} · ${esc(formatLine(s, suggested))}</p>
+      <button class="primary big" data-action="start" data-id="${suggested.id}" data-board="${board}">▶ Start on ${name}</button>`;
+  } else {
+    if (waiting) {
+      // "2 on, 1 off": the planned next match has a team still playing on the other board.
+      const busy = new Set(T.liveFixtures(s).flatMap((x) => [x.homeId, x.awayId]));
+      const who = [waiting.homeId, waiting.awayId].filter((t) => busy.has(t)).map((t) => T.teamName(s, t));
+      const other = T.liveFixtures(s).find((x) => [x.homeId, x.awayId].some((t) => busy.has(t) && (t === waiting.homeId || t === waiting.awayId)));
+      inner = `<p class="muted">Next up — waiting</p>
+        <div class="next-teams">${slotBlock(s, waiting, 'home', { cls: 'end' })}<em>v</em>${slotBlock(s, waiting, 'away')}</div>
+        <p class="waiting-why">Starts when <strong>${esc(who.join(' & '))}</strong> finish${who.length === 1 ? 'es' : ''} on ${esc(s.config.boardNames[(other?.board ?? 1) - 1])} (2 on, 1 off).</p>`;
+    } else {
+      inner = `<p class="muted waiting">${esc(idleMessage(s))}</p>`;
+    }
+  }
+  const picker = options.length > (suggested ? 1 : 0)
+    ? `<label class="picker">Or start another match:
+        <select id="pick-${board}" data-change="start-pick" data-board="${board}">
+          <option value="">Choose…</option>
+          ${options.map((x) => `<option value="${x.id}">${esc(stageName(x, { short: true }))} — ${esc(teamText(s, x.homeId, slotName(s, x, 'home')))} v ${esc(teamText(s, x.awayId, slotName(s, x, 'away')))}${x.plannedBoard && x.plannedBoard !== board ? ` (planned for ${esc(s.config.boardNames[x.plannedBoard - 1])})` : ''}</option>`).join('')}
+        </select></label>`
+    : '';
+  return `<article class="board free"><header><h2>${name}</h2><span class="tag">Free</span></header>
+    <div class="free-body">${inner}${picker}</div></article>`;
+}
+
+function queueList(s, next) {
+  const q = T.upcoming(s);
+  if (!q.length) {
+    if (s.phase === 'knockout') return `<p class="muted">${esc(idleMessage(s))}</p>`;
+    return `<p class="muted">No matches waiting.</p>`;
+  }
+  const marks = new Map([[next[1]?.id, 1], [next[2]?.id, 2]]);
+  return `<ol class="queue">${q.slice(0, 8).map((f) => {
+    const m = marks.get(f.id);
+    return `<li>
+      <span class="q-stage">${esc(stageName(f, { short: true }))}${f.plannedBoard ? `<span class="board-chip b${f.plannedBoard}" title="Planned for ${esc(s.config.boardNames[f.plannedBoard - 1])}">B${f.plannedBoard}</span>` : ''}</span>
+      <span class="q-teams">${slotBlock(s, f, 'home')} <em>v</em> ${slotBlock(s, f, 'away')}</span>
+      ${m ? `<span class="tag" title="${T.liveOnBoard(s, m) ? 'Starts when this board is free' : 'Ready to start now'}">${T.liveOnBoard(s, m) ? 'after' : '→'} ${esc(s.config.boardNames[m - 1])}</span>` : ''}
+      <span class="q-actions">
+        ${[1, 2].map((b) => canStartOn(s, f, b) ? `<button class="small" data-action="start" data-id="${f.id}" data-board="${b}" title="Start on ${esc(s.config.boardNames[b - 1])}">▶ B${b}</button>` : '').join('')}
+      </span>
+    </li>`;
+  }).join('')}</ol>${q.length > 8 ? `<p class="muted small-text">+ ${q.length - 8} more · <a href="#" data-action="tab" data-tab="fixtures">all fixtures</a></p>` : ''}`;
+}
+
 // ---------------------------------------------------------------- view: match day
 // Every fixture, Board 1 and Board 2 side by side (row k = the k-th match on
 // each board, which run at the same time). Scores and averages are entered
@@ -400,7 +517,7 @@ const drafts = new Map(); // fixtureId -> { homeLegs, awayLegs, homeAvg, awayAvg
 const editing = new Set(); // finished fixtures open for correction
 let scrolledToCurrent = false;
 
-function viewLive(s) {
+function viewMatchday(s) {
   if (s.phase === 'setup') {
     return `<section class="empty-state card">
       <h2>Nothing to score yet</h2>

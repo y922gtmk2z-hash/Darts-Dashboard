@@ -105,7 +105,7 @@ test('admin → TV sync, TV connection indicator, refresh recovery', { skip }, a
   await tv.reload();
   await tv.waitForSelector('.live-card:not(.idle)');
   await admin.reload();
-  assert.match(await admin.textContent('.mcard.live'), /1/);
+  assert.match(await admin.textContent('.board.live'), /1/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -242,7 +242,7 @@ test('"2 on, 1 off" rule: planned in pairs, boards wait for the right teams', { 
   await admin.waitForSelector('dialog[open]');
   await admin.keyboard.press('Enter');
   // Board 1's planned next match needs a team still on Board 2: it waits rather than jumping ahead.
-  await admin.waitForSelector('.mcard .waiting-why');
+  await admin.waitForSelector('.board .waiting-why');
   await tv.waitForFunction(() => /after the other board finishes/.test(document.querySelector('.live-card')?.textContent ?? ''));
   assert.deepEqual(errors, []);
   await ctx.close();
@@ -250,7 +250,7 @@ test('"2 on, 1 off" rule: planned in pairs, boards wait for the right teams', { 
 
 test('match day: Board 1 and Board 2 side by side; type a result and averages straight into the list', { skip }, async () => {
   const { ctx, admin, tv, errors } = await openPair({ state: leagueState(8) });
-  await admin.click('.tabs [data-tab="live"]');
+  await admin.click('.tabs [data-tab="matchday"]');
   // Row k holds the k-th match of each board.
   const firstRow = await admin.$$eval('.md-row:first-child .mcard', (els) => els.map((e) => e.id.slice(2)));
   const s0 = leagueState(8);
@@ -311,6 +311,11 @@ test('the final waits for the 3rd place play-off', { skip }, async () => {
   s = simulateUntil(s, (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done'), seededRandom(5));
   const { ctx, admin } = await openPair({ state: s });
   await admin.click('.tabs [data-tab="live"]');
+  const boards = await admin.locator('.board').allTextContents();
+  assert.ok(boards.some((t) => /3rd place/.test(t)));
+  assert.ok(!boards.some((t) => /Final/.test(t) && /Start on/.test(t)), 'final not offered yet');
+  // Same on the Match day list.
+  await admin.click('.tabs [data-tab="matchday"]');
   assert.ok(await admin.locator('#m-3P [data-action="start"]').count() > 0, '3rd place can start');
   assert.equal(await admin.locator('#m-F [data-action="start"]').count(), 0, 'final not offered yet');
   await ctx.close();
