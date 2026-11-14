@@ -181,7 +181,8 @@ test('manual fixtures: start empty, add, paste, edit position', { skip }, async 
   await admin.click('table.fixtures tbody tr:nth-child(2) [data-action="fixture-edit"]');
   await admin.fill('dialog input[name="pos"]', '1');
   await admin.click('dialog button:has-text("Save")');
-  assert.match(await admin.textContent('table.fixtures tbody tr:nth-child(1)'), /The Bullseyes/);
+  // The table re-renders just after the dialog closes.
+  await admin.waitForFunction(() => /The Bullseyes/.test(document.querySelector('table.fixtures tbody tr')?.textContent ?? ''));
   await admin.selectOption('#fx-team', { label: 'Oche Dear' });
   assert.equal(await admin.locator('table.fixtures tbody tr').count(), 1);
   assert.deepEqual(errors, []);
