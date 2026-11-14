@@ -135,7 +135,10 @@ export const teamName = (state, id, fallback = 'TBD') => teamById(state, id)?.na
 export const fixtureById = (state, id) => state.fixtures.find((f) => f.id === id) ?? null;
 export const byOrder = (a, b) => a.order - b.order;
 
+/** League table from finished matches (used for seeding and records). */
 export const standings = (state) => computeStandings(state.teams, state.fixtures, state.config);
+/** Live league table: also counts legs already won in matches still being played. */
+export const liveStandings = (state) => computeStandings(state.teams, state.fixtures, state.config, { includeLive: true });
 export const liveFixtures = (state) => state.fixtures.filter((f) => f.status === 'live');
 export const liveOnBoard = (state, board) => state.fixtures.find((f) => f.status === 'live' && f.board === board) ?? null;
 export const leagueFixtures = (state) => state.fixtures.filter((f) => f.stage === 'league');

@@ -20,17 +20,23 @@ function emptyRow(team) {
     h2hLegDiff: 0,
     position: 0,
     tiedWithPrev: false, // true = only separated from the row above by name
+    live: false, // includes legs from a match still being played
+    liveLegDiff: 0, // the part of legDiff that comes from that match
   };
 }
 
 const primary = (a, b) => b.points - a.points || b.legDiff - a.legDiff || b.legsFor - a.legsFor;
 
 /**
+ * includeLive: legs already won in league matches still being played count
+ * towards legs won / lost / leg difference straight away (points, played,
+ * W/L only change when the match finishes). Gives a live "as it stands" table.
+ *
  * Order: points -> leg difference -> legs won -> head-to-head -> name.
  * Head-to-head is a mini-league among the teams still level (points, then
  * leg difference in those matches).
  */
-export function computeStandings(teams, fixtures, config) {
+export function computeStandings(teams, fixtures, config, { includeLive = false } = {}) {
   const rows = new Map(teams.map((t) => [t.id, emptyRow(t)]));
   const win = config?.points?.win ?? 3;
   const loss = config?.points?.loss ?? 0;
@@ -58,6 +64,21 @@ export function computeStandings(teams, fixtures, config) {
       if (typeof avg === 'number') {
         row.avgSum += avg;
         row.avgCount++;
+      }
+    }
+  }
+
+  if (includeLive) {
+    for (const f of fixtures) {
+      if (f.stage !== 'league' || f.status !== 'live') continue;
+      const h = rows.get(f.homeId);
+      const a = rows.get(f.awayId);
+      if (!h || !a) continue;
+      for (const [row, legsFor, legsAgainst] of [[h, f.homeLegs, f.awayLegs], [a, f.awayLegs, f.homeLegs]]) {
+        row.legsFor += legsFor;
+        row.legsAgainst += legsAgainst;
+        row.live = true;
+        row.liveLegDiff += legsFor - legsAgainst;
       }
     }
   }

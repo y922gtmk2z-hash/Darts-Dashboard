@@ -94,3 +94,24 @@ test('final tiebreak is name, case-insensitive, and flagged', () => {
   assert.deepEqual(order(rows), ['Alpha', 'beta']);
   assert.equal(rows[1].tiedWithPrev, true);
 });
+
+test('live table: legs in matches being played count towards +/- and order straight away', async () => {
+  const T = await import('../js/logic/tournament.js');
+  const { loadDemoTeams } = await import('../js/logic/simulate.js');
+  let s = T.startLeague(loadDemoTeams(T.createTournament(), 4));
+  const f = T.upcoming(s)[0];
+  s = T.startMatch(s, f.id, 1);
+  s = T.adjustLegs(s, f.id, 'away', 1);
+  const live = T.liveStandings(s);
+  const away = live.find((r) => r.teamId === f.awayId);
+  const home = live.find((r) => r.teamId === f.homeId);
+  assert.deepEqual([away.legDiff, away.legsFor, away.points, away.played, away.live, away.liveLegDiff], [1, 1, 0, 0, true, 1]);
+  assert.equal(home.legDiff, -1);
+  assert.equal(live[0].teamId, f.awayId, 'leading team goes top on leg difference');
+  // The finished-only table (used for knockout seeding) ignores the live match.
+  assert.ok(T.standings(s).every((r) => r.legDiff === 0 && !r.live));
+  // Once finished, points arrive and the live markers go.
+  s = T.finishMatch(T.adjustLegs(s, f.id, 'away', 1), f.id);
+  const done = T.liveStandings(s).find((r) => r.teamId === f.awayId);
+  assert.deepEqual([done.points, done.played, done.legDiff, done.live], [3, 1, 2, false]);
+});

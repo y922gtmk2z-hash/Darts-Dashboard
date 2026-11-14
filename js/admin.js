@@ -854,7 +854,7 @@ async function editResultDialog(id) {
 // ---------------------------------------------------------------- view: table & knockout
 
 function standingsTable(s, { compact = false } = {}) {
-  const rows = T.standings(s);
+  const rows = T.liveStandings(s);
   const showAvg = true; // always shown, so it's clear where averages appear ("–" until recorded)
   const live = new Set(T.liveFixtures(s).filter((f) => f.stage === 'league').flatMap((f) => [f.homeId, f.awayId]));
   const q = s.config.qualifiers;
@@ -866,7 +866,7 @@ function standingsTable(s, { compact = false } = {}) {
       <td class="team-cell">${teamBlock(s, r.teamId, { inline: compact })}${live.has(r.teamId) ? ' <span class="dot-live" title="Playing now"></span>' : ''}</td>
       <td class="r num">${r.played}</td><td class="r num">${r.won}</td><td class="r num">${r.lost}</td>
       ${compact ? '' : `<td class="r num">${r.legsFor}</td><td class="r num">${r.legsAgainst}</td>`}
-      <td class="r num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="r num avg-col">${fmtAvg(r.avg) || '–'}</td>` : ''}<td class="r num strong">${r.points}</td>
+      <td class="r num ${r.live ? 'live-num' : ''}" ${r.live ? `title="Includes ${r.liveLegDiff > 0 ? '+' : ''}${r.liveLegDiff} from the match being played now"` : ''}>${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="r num avg-col">${fmtAvg(r.avg) || '–'}</td>` : ''}<td class="r num strong">${r.points}</td>
       ${compact ? '' : `<td class="form">${r.form.map((x) => `<span class="${x}">${x}</span>`).join('')}</td>`}
     </tr>`).join('')}</tbody></table>`;
 }

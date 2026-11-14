@@ -447,3 +447,4 @@ main .who-players { font-size: 0.8em; }
   .md-head, .md-row { grid-template-columns: 1.6rem minmax(0, 1fr); }
   .md-row > :nth-child(3) { grid-column: 2; }
 }
+.live-num { color: #ff9b9d; font-style: italic; }

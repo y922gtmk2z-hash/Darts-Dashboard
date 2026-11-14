@@ -75,7 +75,7 @@ function trackChanges(s) {
   }
   prevLegs = legs;
 
-  const rows = T.standings(s);
+  const rows = T.liveStandings(s);
   const now = Date.now();
   if (prevPositions) {
     for (const r of rows) {
@@ -105,7 +105,7 @@ function render({ transition = false, changes = null } = {}) {
   }
   applyTheme(s);
   document.title = `${s.config.title} · Live`;
-  const ch = changes ?? { bumps: new Set(), rows: T.standings(s), fresh: [], phaseChanged: false };
+  const ch = changes ?? { bumps: new Set(), rows: T.liveStandings(s), fresh: [], phaseChanged: false };
   const view = currentView(s);
 
   // FLIP: remember where table rows were before re-rendering.
@@ -286,7 +286,7 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
         <td class="pos num">${r.position}</td>
         <td class="team">${teamBlock(s, r.teamId, { inline: rows.length > 10, cls: 'nm' })}${live.has(r.teamId) ? '<span class="live-dot"></span>' : ''}${arrow}</td>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.lost}</td>
-        <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="num avg">${fmtAvg(r.avg) || '–'}</td>` : ''}
+        <td class="num ${r.live ? 'live-num' : ''}">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="num avg">${fmtAvg(r.avg) || '–'}</td>` : ''}
         <td class="pts num">${r.points}</td>
         ${showForm ? `<td class="form">${r.form.map((x) => `<i class="${x}">${x}</i>`).join('')}</td>` : ''}
       </tr>`;

@@ -283,6 +283,22 @@ test('match day: Board 1 and Board 2 side by side; type a result and averages st
   await ctx.close();
 });
 
+test('league table is live: +/- moves with legs in matches still being played', { skip }, async () => {
+  const s = T.startMatch(leagueState(8), 'L1', 1);
+  const away = T.fixtureById(s, 'L1').awayId;
+  const { ctx, admin, tv, errors } = await openPair({ state: s });
+  await admin.click('.kbd-help');
+  await admin.keyboard.press('a'); // leg to the away team on Board 1
+  await tv.waitForFunction((id) => {
+    const row = document.querySelector(`.tv-table tr[data-team-row="${id}"]`);
+    return row && row.querySelector('td.live-num')?.textContent === '+1' && row === document.querySelector('.tv-table tbody tr');
+  }, away);
+  await admin.click('.tabs [data-tab="table"]');
+  assert.match(await admin.textContent('table.standings tbody tr:first-child'), /\+1/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the final waits for the 3rd place play-off', { skip }, async () => {
   let s = loadDemoTeams(T.createTournament({ thirdPlace: true }), 4);
   s = simulateUntil(s, (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done'), seededRandom(5));
