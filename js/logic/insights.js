@@ -331,3 +331,114 @@ export function finishEstimate(state, now = Date.now()) {
   if (ms <= 0) return null;
   return { ms, finishAt: now + ms };
 }
+
+// ---------------------------------------------------------------- result banner
+
+const STAGE_TITLE = { semi: 'the semi-final', third: 'the 3rd place play-off', final: 'the final' };
+
+/**
+ * What a just-finished match meant, for the TV's result banner:
+ * { winnerId, loserId, score: '2–1', headline, detail } where headline says
+ * who won and detail what it changed (league position, qualification, the
+ * final). Knockout results say what the winner goes on to.
+ */
+export function resultSummary(state, f) {
+  const w = winnerId(f);
+  const l = loserId(f);
+  const score = `${Math.max(f.homeLegs, f.awayLegs)}–${Math.min(f.homeLegs, f.awayLegs)}`;
+  const out = { winnerId: w, loserId: l, score, headline: `${nameOf(state, w)} win ${score}`, detail: '' };
+  if (f.stage === 'semi') { out.detail = `${nameOf(state, w)} are through to the final`; return out; }
+  if (f.stage === 'third') { out.detail = `${nameOf(state, w)} take third place`; return out; }
+  if (f.stage === 'final') { out.headline = `${nameOf(state, w)} are the champions!`; out.detail = `Beat ${nameOf(state, l)} ${score} in the final`; return out; }
+  // League: position before (this match not played) and after, finished results only.
+  const without = state.fixtures.map((x) => (x.id === f.id ? { ...x, status: 'scheduled' } : x));
+  const pos = (fx) => new Map(computeStandings(state.teams, fx, state.config).map((r) => [r.teamId, r.position]));
+  const before = pos(without);
+  const after = pos(state.fixtures);
+  const qBefore = qualificationStatus(state, without);
+  const qAfter = qualificationStatus(state);
+  const move = (id) => {
+    const a = before.get(id);
+    const b = after.get(id);
+    if (b < a) return `up to ${ordinal(b)} ▲`;
+    if (b > a) return `down to ${ordinal(b)} ▼`;
+    return `stay ${ordinal(b)}`;
+  };
+  if (qBefore.get(w)?.status !== 'in' && qAfter.get(w)?.status === 'in' && state.teams.length > state.config.qualifiers) {
+    out.detail = `${nameOf(state, w)} are sure of a semi-final place!`;
+  } else if (qBefore.get(l)?.status !== 'out' && qAfter.get(l)?.status === 'out') {
+    out.detail = `${nameOf(state, w)} ${move(w)} · ${nameOf(state, l)} can no longer make the top ${state.config.qualifiers}`;
+  } else {
+    out.detail = `${nameOf(state, w)} ${move(w)} · ${nameOf(state, l)} ${move(l)}`;
+  }
+  out.stage = STAGE_TITLE[f.stage] ?? '';
+  return out;
+}
+
+// ---------------------------------------------------------------- team spotlight
+
+/**
+ * One team's night: { teamId, row (live table), results [{ f, opponentId, won,
+ * forLegs, againstLegs, avg }], averages [numbers in order], live, next }.
+ */
+export function teamSpotlight(state, teamId) {
+  const row = computeStandings(state.teams, state.fixtures, state.config, { includeLive: true }).find((r) => r.teamId === teamId) ?? null;
+  const results = finishedAll(state).filter((f) => plays(f, teamId)).map((f) => {
+    const home = f.homeId === teamId;
+    const forLegs = home ? f.homeLegs : f.awayLegs;
+    const againstLegs = home ? f.awayLegs : f.homeLegs;
+    return { f, opponentId: home ? f.awayId : f.homeId, won: forLegs > againstLegs, forLegs, againstLegs, avg: home ? f.homeAvg : f.awayAvg };
+  });
+  const averages = results.map((r) => r.avg).filter((a) => typeof a === 'number');
+  const live = state.fixtures.find((f) => f.status === 'live' && plays(f, teamId)) ?? null;
+  const next = state.fixtures.filter((f) => f.status === 'scheduled' && plays(f, teamId) && f.homeId && f.awayId)
+    .sort((a, b) => a.order - b.order)[0] ?? null;
+  return { teamId, row, results, averages, live, next };
+}
+
+// ---------------------------------------------------------------- knockout: tale of the tape
+
+/**
+ * Side-by-side comparison of the two teams in a knockout match. Rows are
+ * { label, home, away, better: 'home' | 'away' | null } with display values;
+ * `meetings` are their earlier matches tonight (any stage), oldest first.
+ */
+export function taleOfTheTape(state, f) {
+  const league = computeStandings(state.teams, state.fixtures, state.config);
+  const byId = new Map(league.map((r) => [r.teamId, r]));
+  const avgs = averagesBoard(state, { top: 99 });
+  const seasonAvg = new Map(avgs.season.map((x) => [x.teamId, x.avg]));
+  const bestAvg = new Map();
+  for (const e of avgs.bestMatch) if (!bestAvg.has(e.teamId)) bestAvg.set(e.teamId, e.avg);
+  const { streaks } = records(state);
+  const seed = (id) => (state.seeds ?? []).indexOf(id) + 1 || null;
+  const cmp = (a, b, higher = true) => (a == null || b == null || a === b ? null : (a > b) === higher ? 'home' : 'away');
+  const h = byId.get(f.homeId);
+  const a = byId.get(f.awayId);
+  const fmt2 = (n) => (typeof n === 'number' ? n.toFixed(2) : '–');
+  const signed = (n) => (n > 0 ? `+${n}` : `${n}`);
+  const rows = [];
+  if (h && a) {
+    rows.push({ label: 'League finish', home: ordinal(h.position), away: ordinal(a.position), better: cmp(h.position, a.position, false) });
+    rows.push({ label: 'Won – lost', home: `${h.won}–${h.lost}`, away: `${a.won}–${a.lost}`, better: cmp(h.won - h.lost, a.won - a.lost) });
+    rows.push({ label: 'Leg difference', home: signed(h.legDiff), away: signed(a.legDiff), better: cmp(h.legDiff, a.legDiff) });
+  }
+  const ah = seasonAvg.get(f.homeId) ?? null;
+  const aa = seasonAvg.get(f.awayId) ?? null;
+  rows.push({ label: '3-dart average', home: fmt2(ah), away: fmt2(aa), better: cmp(ah, aa) });
+  const bh = bestAvg.get(f.homeId) ?? null;
+  const ba = bestAvg.get(f.awayId) ?? null;
+  rows.push({ label: 'Best match average', home: fmt2(bh), away: fmt2(ba), better: cmp(bh, ba) });
+  const lh = streaks.get(f.homeId)?.longest ?? 0;
+  const la = streaks.get(f.awayId)?.longest ?? 0;
+  rows.push({ label: 'Longest winning run', home: String(lh), away: String(la), better: cmp(lh, la) });
+  const meetings = finishedAll(state).filter((x) => x.id !== f.id && plays(x, f.homeId) && plays(x, f.awayId));
+  const homeWins = meetings.filter((x) => winnerId(x) === f.homeId).length;
+  return {
+    seeds: { home: seed(f.homeId), away: seed(f.awayId) },
+    form: { home: h?.form ?? [], away: a?.form ?? [] },
+    rows,
+    meetings,
+    meetingsWon: { home: homeWins, away: meetings.length - homeWins },
+  };
+}

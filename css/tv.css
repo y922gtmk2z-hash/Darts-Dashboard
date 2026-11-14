@@ -446,3 +446,106 @@ body.no-cursor, body.no-cursor * { cursor: none !important; }
 .pos-chart .end.live { animation: live 1.6s infinite; }
 .pos-chart .live-mark { fill: var(--red); font-size: 0.8em; }
 .panel-title .now-key { color: var(--red); }
+
+/* ---------- result banner / "to the oche" (overlay above every screen) ---------- */
+#overlay {
+  position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: center center;
+  z-index: 5; pointer-events: none; display: grid; place-items: center;
+  background: rgba(5, 7, 12, 0.72); opacity: 0; transition: opacity 0.4s ease;
+}
+#overlay.show { opacity: 1; }
+.ov-card {
+  width: 1640px; padding: 46px 70px 52px; border-radius: 28px; text-align: center; color: var(--text);
+  background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 4px solid var(--accent);
+  box-shadow: 0 30px 120px rgba(0, 0, 0, 0.6); display: grid; gap: 18px;
+}
+#overlay.show .ov-card { animation: ov-in 0.6s cubic-bezier(.2, .8, .2, 1); }
+@keyframes ov-in { from { transform: translateY(40px) scale(0.96); opacity: 0; } }
+.ov-card.call { border-color: var(--green); }
+.ov-kicker { font-size: 30px; font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+.ov-card.call .ov-kicker { color: var(--green); }
+.ov-big { font-size: 120px; font-weight: 900; line-height: 1.02; overflow-wrap: anywhere; }
+.ov-big .w { color: #fff; }
+.ov-mid { font-size: 52px; font-weight: 700; color: var(--muted); }
+.ov-mid strong { color: var(--text); }
+.ov-mid b { color: var(--accent); margin-left: 14px; }
+.ov-detail { font-size: 40px; font-weight: 800; color: var(--text); }
+.ov-teams { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 40px; }
+.ov-teams em { font-style: normal; font-size: 54px; color: var(--faint); }
+.ov-team { display: grid; gap: 10px; min-width: 0; }
+.ov-team strong { font-size: 96px; font-weight: 900; line-height: 1.02; overflow-wrap: anywhere; }
+.ov-team span { font-size: 36px; color: var(--muted); }
+.ov-teams .ov-team:first-child { text-align: right; }
+.ov-teams .ov-team:last-child { text-align: left; }
+@media (prefers-reduced-motion: reduce) { #overlay { transition: none; } #overlay.show .ov-card { animation: none; } }
+
+/* ---------- team spotlight ---------- */
+.spot { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+.spot > .panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.spot-main { gap: 26px; }
+.spot-id { display: flex; align-items: center; gap: 34px; min-width: 0; }
+.spot-pos { flex: none; width: 190px; height: 190px; border-radius: 24px; background: var(--accent); color: var(--accent-ink); display: grid; place-content: center; text-align: center; }
+.spot-pos b { font-size: 84px; font-weight: 900; line-height: 1; }
+.spot-pos span { font-size: 22px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+.spot-who { min-width: 0; }
+.spot-who h2 { margin: 0; font-size: 80px; font-weight: 900; line-height: 1.02; overflow-wrap: anywhere; }
+.spot-who p { margin: 10px 0 0; font-size: 34px; color: var(--muted); }
+.spot-tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+.spot-tiles .tile { background: var(--panel-2); border-radius: 14px; padding: 16px 10px; display: grid; gap: 4px; text-align: center; }
+.spot-tiles b { font-size: 48px; font-weight: 900; }
+.spot-tiles span { font-size: 19px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.spot-form { display: flex; align-items: center; gap: 10px; font-size: 26px; font-weight: 800; color: var(--muted); }
+.spot-form > span { margin-right: 12px; text-transform: uppercase; letter-spacing: 0.1em; font-size: 22px; }
+.spot-form i, .tp-form i, .tp-meet i { display: inline-grid; place-items: center; min-width: 46px; height: 46px; border-radius: 9px; font-style: normal; font-weight: 900; font-size: 26px; color: var(--text); padding: 0 6px; }
+.spot-form i.W, .tp-form i.W, .tp-meet i.W, .spot-res i.W { background: color-mix(in srgb, var(--green) 55%, transparent); }
+.spot-form i.L, .tp-form i.L, .tp-meet i.L, .spot-res i.L { background: color-mix(in srgb, var(--red) 45%, transparent); }
+.spot-now { margin-top: auto; font-size: 34px; font-weight: 700; color: var(--muted); display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.spot-now strong { color: var(--text); }
+.spot-now b { font-size: 48px; color: var(--text); }
+.spot-now em { font-style: normal; color: var(--faint); }
+.spot-side .panel-title + .spark { margin-bottom: 18px; }
+.spark { width: 100%; height: auto; flex: none; }
+.spark polyline { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linejoin: round; stroke-linecap: round; }
+.spark circle { fill: var(--accent); stroke: var(--panel); stroke-width: 3; }
+.spark .mean { stroke: var(--faint); stroke-width: 2; stroke-dasharray: 6 8; }
+.spark .mean-lbl { fill: var(--faint); font-size: 20px; font-weight: 700; }
+.spark .last { fill: var(--text); font-size: 26px; font-weight: 900; }
+.spot-res { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.spot-res li { display: grid; grid-template-columns: 46px 80px minmax(0, 1fr) auto; align-items: center; gap: 16px; font-size: 30px; font-weight: 700; }
+.spot-res i { display: inline-grid; place-items: center; width: 46px; height: 46px; border-radius: 9px; font-style: normal; font-weight: 900; font-size: 24px; }
+.spot-res span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spot-res em { font-style: normal; color: var(--faint); font-size: 22px; }
+.empty.small { font-size: 24px; }
+
+/* ---------- knockout: tale of the tape ---------- */
+.tape-grid { flex: 1; min-height: 0; display: grid; gap: 28px; }
+.tape-grid.n2 { grid-template-columns: 1fr 1fr; }
+.tape-grid.n1 { grid-template-columns: minmax(0, 1300px); justify-content: center; }
+.tape { display: flex; flex-direction: column; gap: 18px; min-height: 0; overflow: hidden; }
+.tp-head { display: flex; align-items: center; gap: 18px; }
+.tp-head h2 { margin: 0; font-size: 34px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); }
+.tp-head .pill { margin-left: auto; }
+.tp-top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 20px; }
+.tp-team { min-width: 0; display: grid; gap: 6px; }
+.tp-team.home { text-align: right; justify-items: end; }
+.tp-team.away { text-align: left; justify-items: start; }
+.tp-seed { font-size: 18px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent-ink); background: var(--accent); border-radius: 6px; padding: 2px 10px; }
+.tp-name { font-size: 50px; font-weight: 900; line-height: 1.04; overflow-wrap: anywhere; }
+.tape-grid.n1 .tp-name { font-size: 68px; }
+.tp-players { font-size: 22px; color: var(--muted); }
+.tp-form { display: flex; gap: 6px; margin-top: 4px; }
+.tp-form i { min-width: 34px; height: 34px; font-size: 18px; border-radius: 7px; }
+.tp-vs { font-size: 48px; color: var(--faint); font-weight: 800; }
+.tp-score { font-size: 96px; font-weight: 900; line-height: 1; display: flex; gap: 12px; }
+.tp-rows { display: grid; gap: 4px; }
+.tp-row { display: grid; grid-template-columns: 1fr 300px 1fr; align-items: center; padding: 8px 0; border-top: 1px solid rgba(43, 55, 80, 0.6); }
+.tp-row .v { font-size: 36px; font-weight: 800; color: #cfd6e4; font-variant-numeric: tabular-nums; }
+.tp-row .v:first-child { text-align: right; padding-right: 30px; }
+.tp-row .v:last-child { text-align: left; padding-left: 30px; }
+.tp-row .v.best { color: var(--accent); }
+.tp-row .lbl { text-align: center; font-size: 21px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.tape-grid.n1 .tp-row .v { font-size: 44px; }
+.tp-meet { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; font-size: 26px; font-weight: 700; color: var(--muted); }
+.tp-meet strong { font-size: 34px; color: var(--text); margin-right: 8px; }
+.tp-meet i { min-width: 0; height: 40px; font-size: 22px; }
+.tp-meet em { font-style: normal; color: var(--faint); font-size: 19px; }

@@ -391,6 +391,42 @@ test('the race-for-the-top chart ends on a live "Now" point that moves with each
   await ctx.close();
 });
 
+test('finishing a match shows the result banner on the TV, then calls the next pair to the oche', { skip }, async () => {
+  let s = leagueState(8, 20);
+  const id = T.nextUp(s)[1].id;
+  s = T.adjustLegs(T.startMatch(s, id, 1), id, 'home', 1);
+  const f = T.fixtureById(s, id);
+  const { ctx, admin, tv, errors } = await openPair({ state: s });
+  await tv.waitForSelector('.live-card:not(.idle)');
+  await admin.click('.kbd-help');
+  await admin.keyboard.press('q'); // winning leg → confirm dialog
+  await admin.waitForSelector('dialog[open]');
+  await admin.keyboard.press('Enter');
+  await tv.waitForSelector('#overlay.show .ov-card.result');
+  assert.ok((await tv.textContent('#overlay .ov-big')).includes(T.teamName(s, f.homeId)));
+  assert.match(await tv.textContent('#overlay .ov-mid'), /2–0/);
+  await tv.waitForSelector('#overlay.show .ov-card.call', { timeout: 10000 });
+  assert.match(await tv.textContent('#overlay .ov-kicker'), /To the oche · Board 1/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('team spotlight and knockout tale-of-the-tape screens', { skip }, async () => {
+  let s = simulateUntil(leagueState(8), (x) => x.phase === 'knockout', seededRandom(5));
+  s = T.startMatch(s, 'SF1', 1);
+  const { ctx, tv, errors } = await openPair({ state: s });
+  await tv.goto(`${base}/index.html?view=tape`);
+  await tv.waitForSelector('.tape-grid.n2 .tape');
+  assert.equal(await tv.locator('.tape .tp-seed').count(), 4);
+  assert.match(await tv.textContent('.tape:first-child .tp-head'), /Semi-final 1.*LIVE/s);
+  await tv.goto(`${base}/index.html?view=team`);
+  await tv.waitForSelector('.spot .spot-who h2');
+  assert.equal(await tv.textContent('.spot .spot-who h2'), T.teamName(s, s.seeds[0])); // knockout: the four still in, seed 1 first
+  assert.match(await tv.textContent('.spot .panel-title .hint'), /1 of 4/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('the final waits for the 3rd place play-off', { skip }, async () => {
   let s = loadDemoTeams(T.createTournament({ thirdPlace: true }), 4);
   s = simulateUntil(s, (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done'), seededRandom(5));
