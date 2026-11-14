@@ -400,6 +400,7 @@ function canStartOn(s, f, board) {
 function idleMessage(s) {
   if (s.phase === 'league') {
     const left = T.upcoming(s).length;
+    if (!T.leagueProgress(s).total) return 'No fixtures yet — add matches on the Fixtures tab.';
     if (!left) return T.liveFixtures(s).length ? 'No more league matches — finish the other board.' : 'League complete.';
     return 'Waiting — every remaining match involves a team that is playing now.';
   }
@@ -435,16 +436,18 @@ function queueList(s, next) {
 // ---------------------------------------------------------------- view: fixtures
 
 function viewFixtures(s) {
-  if (!s.fixtures.length) {
-    return `<section class="card empty-state"><h2>No fixtures yet</h2><p>Generate them from the Teams tab once all teams are in.</p>
+  if (s.phase === 'setup') {
+    return `<section class="card empty-state"><h2>No fixtures yet</h2><p>Add your teams, then either generate the fixtures or start the league with an empty list and build it yourself.</p>
       <button class="primary" data-action="tab" data-tab="teams">Go to Teams</button></section>`;
   }
+  const editor = s.phase === 'league' ? fixtureEditor(s) : '';
+  if (!s.fixtures.length) return editor;
   const filters = { upcoming: 'Upcoming', played: 'Played', all: 'All' };
   let list = s.fixtures.slice().sort(T.byOrder);
   if (fixtureFilter === 'upcoming') list = list.filter((f) => f.status !== 'done');
   if (fixtureFilter === 'played') list = list.filter((f) => f.status === 'done').sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0));
   const { played, total } = T.leagueProgress(s);
-  return `<section class="card">
+  return `${editor}<section class="card">
     <div class="card-head">
       <h2>Fixtures <span class="muted small-text">${played}/${total} league matches played</span></h2>
       <div class="seg">${Object.entries(filters).map(([k, v]) => `<button data-action="filter" data-filter="${k}" aria-pressed="${k === fixtureFilter}">${v}</button>`).join('')}</div>
@@ -475,6 +478,11 @@ function fixtureRow(s, f) {
         <button class="small ghost" data-action="move" data-id="${f.id}" data-delta="1" aria-label="Move later">↓</button>
         <button class="small" data-action="play-next" data-id="${f.id}">Play next</button>`;
     }
+    if (f.stage === 'league' && s.phase === 'league') {
+      actions += `<button class="small" data-action="fixture-edit" data-id="${f.id}">Edit</button>
+        <button class="small ghost" data-action="fixture-swap" data-id="${f.id}" title="Swap home and away" aria-label="Swap home and away">⇄</button>
+        <button class="small danger-ghost" data-action="fixture-remove" data-id="${f.id}" aria-label="Delete this match">✕</button>`;
+    }
   }
   return `<tr class="${f.status}">
     <td class="num muted">${f.order}</td>
@@ -485,6 +493,91 @@ function fixtureRow(s, f) {
     <td>${status}</td>
     <td class="r actions">${actions}</td>
   </tr>`;
+}
+
+function teamOptions(s, selected = '', placeholder = 'Choose team…') {
+  return `<option value="">${esc(placeholder)}</option>${s.teams
+    .map((t) => `<option value="${t.id}" ${t.id === selected ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}`;
+}
+
+/** Add / paste / check league fixtures (league phase). */
+function fixtureEditor(s) {
+  const b = T.leagueBalance(s);
+  const name = (id) => esc(T.teamName(s, id));
+  const pair = (p) => `${name(p.a)} v ${name(p.b)}${p.expected > 1 || p.count > 1 ? ` <span class="muted">(${p.count}/${p.expected})</span>` : ''}`;
+  const list = (items, max = 12) => `${items.slice(0, max).map(pair).join(' · ')}${items.length > max ? ` · <span class="muted">+${items.length - max} more</span>` : ''}`;
+  const perTeam = s.teams.map((t) => `<span class="chip">${esc(t.name)} <b class="num">${b.perTeam.get(t.id) ?? 0}</b></span>`).join('');
+  const once = s.config.doubleRoundRobin ? 'twice' : 'once';
+  let status;
+  if (!s.fixtures.some((f) => f.stage === 'league')) {
+    status = `<p class="muted">No league matches yet. Add them below, paste a list, or fill in a full ${once}-each round robin.</p>`;
+  } else if (b.complete) {
+    status = `<p class="ok-text">✓ Every pair of teams meets exactly ${once}.</p>`;
+  } else {
+    status = `${b.missing.length ? `<p><strong>Not scheduled yet (${b.missing.length}):</strong> ${list(b.missing)}</p>` : ''}
+      ${b.extra.length ? `<p><strong>Scheduled more than ${once} (${b.extra.length}):</strong> ${list(b.extra)}</p>` : ''}
+      <p class="muted small-text">That's fine if it's deliberate — the table just counts whatever is played.</p>`;
+  }
+  return `<section class="split fixture-tools">
+    <div class="card">
+      <h2>Add a match</h2>
+      <form class="add-fixture" data-form="add-fixture">
+        <select id="af-home" name="home" aria-label="Home team">${teamOptions(s, '', 'Home team…')}</select>
+        <span class="muted">v</span>
+        <select id="af-away" name="away" aria-label="Away team">${teamOptions(s, '', 'Away team…')}</select>
+        <button class="primary">Add</button>
+      </form>
+      <p class="muted small-text">New matches go to the end of the queue — use “Play next” or Edit to move them.</p>
+      <details class="bulk-fixtures">
+        <summary>Paste a fixture list</summary>
+        <form data-form="bulk-fixtures">
+          <p class="muted small-text">One match per line, in play order: <code>Team A v Team B</code> (also “vs” or “-”). Team names must match the Teams tab.</p>
+          <textarea id="bulk-fixtures" name="bulk" rows="6" placeholder="Double Trouble v The Bullseyes&#10;Treble Makers vs Oche Dear"></textarea>
+          <button class="primary">Add matches</button>
+        </form>
+      </details>
+    </div>
+    <div class="card">
+      <h2>Fixture check</h2>
+      ${status}
+      <p class="small-text muted">League matches per team:</p>
+      <div class="chips">${perTeam}</div>
+      <div class="btn-row">
+        <button class="small" data-action="fixtures-fill" title="Keep played matches; schedule exactly the meetings still owed">${s.fixtures.some((f) => f.stage === 'league') ? 'Regenerate unplayed matches' : `Generate full ${once}-each round robin`}</button>
+        <button class="small danger-ghost" data-action="fixtures-clear" ${T.upcoming(s).some((f) => f.stage === 'league') ? '' : 'disabled'}>Delete all unplayed matches</button>
+      </div>
+    </div>
+  </section>`;
+}
+
+async function editFixtureDialog(id) {
+  const s = S();
+  const f = T.fixtureById(s, id);
+  const queue = T.upcoming(s).filter((x) => x.stage === f.stage);
+  const pos = queue.findIndex((x) => x.id === id) + 1;
+  let next = null;
+  const v = await ask({
+    title: `Edit ${stageName(f)}`,
+    body: `<div class="edit-fixture">
+        <label>Home<select name="home">${teamOptions(s, f.homeId)}</select></label>
+        <span>v</span>
+        <label>Away<select name="away">${teamOptions(s, f.awayId)}</select></label>
+      </div>
+      <label>Position in the queue (1 = next)<input name="pos" type="number" min="1" max="${queue.length}" value="${pos}"></label>`,
+    buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Save', value: 'save', kind: 'primary', autofocus: true }],
+    onSubmit(form) {
+      try {
+        let st = T.updateFixture(S(), id, { homeId: form.home.value, awayId: form.away.value });
+        if (Number(form.pos.value) !== pos) st = T.moveFixtureTo(st, id, Number(form.pos.value));
+        next = st;
+        return true;
+      } catch (e) {
+        toast(e.message, 'error');
+        return false;
+      }
+    },
+  });
+  if (v === 'save' && next) store.set(next, { label: `Edited ${stageName(f)}` });
 }
 
 async function editResultDialog(id) {
@@ -659,6 +752,8 @@ function viewTeams(s) {
         <p><strong>${n}</strong> teams · play each other <strong>${s.config.doubleRoundRobin ? 'twice' : 'once'}</strong> · <strong>${n >= 2 ? matches : 0}</strong> league matches · best of ${s.config.bestOf.league}</p>
         <p class="muted small-text">Change once/twice, best-of and points in <a href="#" data-action="tab" data-tab="settings">Settings</a>.</p>
         <button class="primary big" data-action="start-league" ${n < MIN_TEAMS ? 'disabled' : ''}>Generate fixtures &amp; start league</button>
+        <p><button class="link" data-action="start-league-manual" ${n < MIN_TEAMS ? 'disabled' : ''}>…or start with an empty fixture list and set the matches yourself</button></p>
+        <p class="muted small-text">Either way you can add, delete, edit and reorder matches on the Fixtures tab until they're played.</p>
         ${n < MIN_TEAMS ? `<p class="muted">Add at least ${MIN_TEAMS} teams.</p>` : ''}
       </section>`
     : `<section class="card"><h2>Team list locked</h2><p class="muted">The league has started, so teams can't be added or removed. Names and players can still be edited — the TV updates instantly.</p>
@@ -847,6 +942,26 @@ const actions = {
   move: (d) => act('Reordered fixtures', (s) => T.moveFixture(s, d.id, Number(d.delta))),
   'play-next': (d) => act('Reordered fixtures', (s) => T.playNext(s, d.id)),
   'edit-result': (d) => editResultDialog(d.id),
+  'fixture-edit': (d) => editFixtureDialog(d.id),
+  'fixture-swap': (d) => act('Swapped home/away', (s) => T.swapHomeAway(s, d.id)),
+  'fixture-remove': (d) => {
+    const f = T.fixtureById(S(), d.id);
+    if (act(`Deleted ${stageName(f)}`, (s) => T.removeFixture(s, d.id))) {
+      toast(`Deleted ${T.teamName(S(), f.homeId)} v ${T.teamName(S(), f.awayId)}.`, 'info', { action: { label: 'Undo', fn: undo } });
+    }
+  },
+  'fixtures-clear': async () => {
+    if (await confirmAction('Delete all unplayed matches?', 'Played and live matches are kept. You can then add matches yourself (or Undo).', 'Delete unplayed', 'danger')) {
+      act('Deleted unplayed matches', T.clearUnplayedFixtures);
+    }
+  },
+  'fixtures-fill': async () => {
+    const s = S();
+    const has = s.fixtures.some((f) => f.stage === 'league' && f.status === 'scheduled');
+    if (!has || await confirmAction('Regenerate unplayed matches?', `Your unplayed matches (and their order) are replaced by a generated list of exactly the meetings still owed so every pair plays ${s.config.doubleRoundRobin ? 'twice' : 'once'}. Played matches are kept.`, 'Regenerate')) {
+      act('Regenerated fixtures', T.regenerateUnplayed);
+    }
+  },
   unplay: async (d) => {
     const f = T.fixtureById(S(), d.id);
     if (await confirmAction('Un-play this match?', `${esc(stageName(f))} goes back into the queue with no result.`, 'Un-play', 'danger')) {
@@ -874,6 +989,15 @@ const actions = {
         prefs.set('tab', tab);
         render();
         toast(`${matches} fixtures generated. Press “Start” on each board.`, 'success');
+      }
+    }
+  },
+  'start-league-manual': async () => {
+    if (await confirmAction('Start the league with no fixtures?', 'The league starts with an empty fixture list. Add matches one at a time or paste a list on the Fixtures tab. Teams can\'t be added or removed after this (names can still be edited).', 'Start league')) {
+      if (act('Started league (manual fixtures)', (s) => T.startLeague(s, { manual: true }))) {
+        tab = 'fixtures';
+        prefs.set('tab', tab);
+        render();
       }
     }
   },
@@ -957,6 +1081,25 @@ $('#main').addEventListener('submit', (e) => {
     if (ok) {
       form.reset();
       requestAnimationFrame(() => $('#new-name')?.focus());
+    }
+  } else if (form.dataset.form === 'add-fixture') {
+    if (act('Added match', (s) => T.addFixture(s, form.home.value, form.away.value))) {
+      toast('Match added to the end of the queue.', 'success');
+      requestAnimationFrame(() => $('#af-home')?.focus());
+    }
+  } else if (form.dataset.form === 'bulk-fixtures') {
+    try {
+      const { state, added, skipped, skippedLines } = T.addFixturesBulk(S(), form.bulk.value);
+      if (added) store.set(state, { label: `Added ${added} matches` });
+      // Keep the lines that failed so they can be corrected.
+      const area = $('#bulk-fixtures');
+      if (area) {
+        area.value = skippedLines.join('\n');
+        if (skippedLines.length) area.closest('details').open = true;
+      }
+      toast(`Added ${added} match${added === 1 ? '' : 'es'}.${skipped.length ? ` Skipped: ${skipped.join('; ')}` : ''}`, skipped.length ? 'error' : 'success', { timeout: 10000 });
+    } catch (err) {
+      toast(err.message, 'error');
     }
   } else if (form.dataset.form === 'bulk') {
     try {

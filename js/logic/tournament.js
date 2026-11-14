@@ -290,16 +290,196 @@ export function stageLabel(stage) {
 
 // ---------- league ----------
 
-export function startLeague(state) {
+/**
+ * Start the league. `manual: true` starts with an empty fixture list so the
+ * organiser can add every match themselves; otherwise a round robin is generated.
+ */
+export function startLeague(state, { manual = false } = {}) {
   if (state.phase !== 'setup') fail('The league has already started.');
   if (state.teams.length < MIN_TEAMS) fail(`Need at least ${MIN_TEAMS} teams.`);
   return mutate(state, (s) => {
-    s.fixtures = generateLeagueFixtures(
-      s.teams.map((t) => t.id),
-      { double: s.config.doubleRoundRobin },
-    );
+    s.fixtures = manual
+      ? []
+      : generateLeagueFixtures(s.teams.map((t) => t.id), { double: s.config.doubleRoundRobin });
     s.phase = 'league';
   });
+}
+
+// ---------- manual fixture editing (league, unplayed matches only) ----------
+
+function assertLeagueEditable(state) {
+  if (state.phase !== 'league') fail('League fixtures can only be changed during the league.');
+}
+
+function assertPairing(state, homeId, awayId) {
+  if (!teamById(state, homeId) || !teamById(state, awayId)) fail('Pick two teams.');
+  if (homeId === awayId) fail('A team cannot play itself.');
+}
+
+function getScheduledLeague(s, id) {
+  const f = getFixture(s, id);
+  if (f.stage !== 'league') fail('Only league matches can be edited here.');
+  if (f.status !== 'scheduled') fail('Only matches that have not started can be changed.');
+  return f;
+}
+
+function nextLeagueId(s) {
+  const n = Math.max(0, ...s.fixtures.map((f) => Number(/^L(\d+)$/.exec(f.id)?.[1] ?? 0)));
+  return `L${n + 1}`;
+}
+
+/** Add a league match at the end of the queue. */
+export function addFixture(state, homeId, awayId) {
+  assertLeagueEditable(state);
+  assertPairing(state, homeId, awayId);
+  return mutate(state, (s) => {
+    const order = Math.max(0, ...s.fixtures.filter((f) => f.stage === 'league').map((f) => f.order)) + 1;
+    s.fixtures.push({
+      id: nextLeagueId(s), stage: 'league', round: null, homeId, awayId, board: null,
+      status: 'scheduled', homeLegs: 0, awayLegs: 0, order, startedAt: null, finishedAt: null,
+    });
+  });
+}
+
+/**
+ * Paste a fixture list, one match per line: "Team A v Team B"
+ * (also "vs", "vs.", " - ", "@"). Team names match case-insensitively.
+ */
+export function parseBulkFixtures(state, text) {
+  const byName = new Map(state.teams.map((t) => [t.name.toLowerCase(), t.id]));
+  const matches = [];
+  const skipped = [];
+  const skippedLines = [];
+  const skip = (raw, why) => { skipped.push(why); skippedLines.push(raw.trim()); };
+  for (const raw of String(text ?? '').split(/\r?\n/)) {
+    const line = raw.replace(/^\s*(?:\d+[.):]|[-*•])\s*/, '').trim();
+    if (!line) continue;
+    const m = line.match(/^(.+?)\s+(?:v|vs\.?|versus|-|@)\s+(.+)$/i);
+    if (!m) { skip(raw, `${line} (use “Team A v Team B”)`); continue; }
+    const home = byName.get(m[1].trim().toLowerCase());
+    const away = byName.get(m[2].trim().toLowerCase());
+    if (!home || !away) {
+      skip(raw, `${line} (unknown team: ${!home ? m[1].trim() : m[2].trim()})`);
+      continue;
+    }
+    if (home === away) { skip(raw, `${line} (same team twice)`); continue; }
+    matches.push([home, away]);
+  }
+  return { matches, skipped, skippedLines };
+}
+
+export function addFixturesBulk(state, text) {
+  const { matches, skipped, skippedLines } = parseBulkFixtures(state, text);
+  let s = state;
+  for (const [h, a] of matches) s = addFixture(s, h, a);
+  return { state: s, added: matches.length, skipped, skippedLines };
+}
+
+/** Change who plays in an unplayed league match. */
+export function updateFixture(state, id, { homeId, awayId }) {
+  assertLeagueEditable(state);
+  assertPairing(state, homeId, awayId);
+  return mutate(state, (s) => {
+    const f = getScheduledLeague(s, id);
+    f.homeId = homeId;
+    f.awayId = awayId;
+  });
+}
+
+export function swapHomeAway(state, id) {
+  return mutate(state, (s) => {
+    const f = getFixture(s, id);
+    if (f.status !== 'scheduled') fail('Only matches that have not started can be changed.');
+    [f.homeId, f.awayId] = [f.awayId, f.homeId];
+  });
+}
+
+export function removeFixture(state, id) {
+  assertLeagueEditable(state);
+  return mutate(state, (s) => {
+    getScheduledLeague(s, id);
+    s.fixtures = s.fixtures.filter((f) => f.id !== id);
+  });
+}
+
+/** Delete every league match that has not been played or started. */
+export function clearUnplayedFixtures(state) {
+  assertLeagueEditable(state);
+  return mutate(state, (s) => {
+    s.fixtures = s.fixtures.filter((f) => f.stage !== 'league' || f.status !== 'scheduled');
+  });
+}
+
+/** Replace all unplayed league matches with a freshly generated round robin of the pairings still owed. */
+export function regenerateUnplayed(state) {
+  assertLeagueEditable(state);
+  return mutate(state, (s) => {
+    const kept = s.fixtures.filter((f) => f.stage !== 'league' || f.status !== 'scheduled');
+    const wanted = generateLeagueFixtures(s.teams.map((t) => t.id), { double: s.config.doubleRoundRobin });
+    // Remove one generated match per meeting already played/live (home/away aware first, then either way).
+    const remaining = wanted.slice();
+    for (const f of kept.filter((x) => x.stage === 'league')) {
+      let i = remaining.findIndex((m) => m.homeId === f.homeId && m.awayId === f.awayId);
+      if (i < 0) i = remaining.findIndex((m) => m.homeId === f.awayId && m.awayId === f.homeId);
+      if (i >= 0) remaining.splice(i, 1);
+    }
+    s.fixtures = kept;
+    for (const m of remaining) {
+      const order = Math.max(0, ...s.fixtures.filter((f) => f.stage === 'league').map((f) => f.order)) + 1;
+      s.fixtures.push({ ...m, id: nextLeagueId(s), order });
+    }
+  });
+}
+
+/** Move an unplayed match to a 1-based position among the unplayed matches of its stage. */
+export function moveFixtureTo(state, id, position) {
+  return mutate(state, (s) => {
+    const f = getFixture(s, id);
+    if (f.status !== 'scheduled') fail('Only upcoming matches can be moved.');
+    const queue = s.fixtures.filter((x) => x.status === 'scheduled' && x.stage === f.stage).sort(byOrder);
+    const orders = queue.map((x) => x.order);
+    const rest = queue.filter((x) => x !== f);
+    const pos = Math.max(1, Math.min(queue.length, Math.round(Number(position)) || 1));
+    rest.splice(pos - 1, 0, f);
+    rest.forEach((x, i) => (x.order = orders[i]));
+  });
+}
+
+/**
+ * How balanced is the league fixture list? Compares against the configured
+ * once/twice round robin. Returns per-team counts, pairs not yet scheduled
+ * and pairs scheduled more often than expected.
+ */
+export function leagueBalance(state) {
+  const expected = state.config.doubleRoundRobin ? 2 : 1;
+  const league = leagueFixtures(state);
+  const perTeam = new Map(state.teams.map((t) => [t.id, 0]));
+  const pairs = new Map();
+  const key = (a, b) => [a, b].sort().join('|');
+  for (const f of league) {
+    perTeam.set(f.homeId, (perTeam.get(f.homeId) ?? 0) + 1);
+    perTeam.set(f.awayId, (perTeam.get(f.awayId) ?? 0) + 1);
+    pairs.set(key(f.homeId, f.awayId), (pairs.get(key(f.homeId, f.awayId)) ?? 0) + 1);
+  }
+  const missing = [];
+  const extra = [];
+  const ids = state.teams.map((t) => t.id);
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const n = pairs.get(key(ids[i], ids[j])) ?? 0;
+      if (n < expected) missing.push({ a: ids[i], b: ids[j], count: n, expected });
+      if (n > expected) extra.push({ a: ids[i], b: ids[j], count: n, expected });
+    }
+  }
+  const counts = [...perTeam.values()];
+  return {
+    expected,
+    perTeam,
+    missing,
+    extra,
+    even: counts.length > 0 && counts.every((c) => c === counts[0]),
+    complete: missing.length === 0 && extra.length === 0,
+  };
 }
 
 /** Undo "start league" — only while nothing has been played. */
