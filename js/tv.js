@@ -44,9 +44,8 @@ function viewsFor(s) {
   const hasStats = s.fixtures.some((f) => f.status === 'done');
   // The knockout gets its own set: tale of the tape for the next match(es), the
   // bracket, the final league table, the four teams still in, and stats. Once
-  // the finalists are known the live screen becomes the final spotlight (or,
-  // while another match is still on, the spotlight joins the rotation).
-  const ko = finalFixture(s) ? (finalIsAuto(s) ? [] : ['final']) : ['tape'];
+  // the finalists are known the live screen itself becomes the final spotlight.
+  const ko = finalFixture(s) ? [] : ['tape'];
   const views = s.phase === 'league' ? ['auto', 'table', 'chart', 'grid', 'team', 'stats', 'fixtures']
     : s.phase === 'knockout' ? ['auto', ...ko, 'bracket', 'table', 'team', 'stats']
       : ['auto', 'bracket', 'table', 'chart', 'team', 'stats'];
@@ -203,16 +202,16 @@ const STRIP_H = 142;
 
 function body(s, view, ch) {
   if (s.phase === 'setup') return setupView(s);
-  if (view === 'auto' && finalIsAuto(s)) view = 'final';
+  if (view === 'auto' && finalFixture(s)) view = 'final';
   if (view === 'final') {
     // The final has the stage; anything else still being played goes along the bottom.
-    const strip = T.liveFixtures(s).some((f) => f.stage !== 'final');
-    return finalView(s, strip) + (strip ? liveStripHTML(s) : '');
+    const others = T.liveFixtures(s).filter((f) => f.stage !== 'final');
+    return finalView(s, others.length > 0) + liveStripHTML(s, others);
   }
   if (view === 'auto') return viewBody(s, view, ch, false);
   // Every other screen (rotating or pinned) keeps the live scores along the bottom.
   const strip = T.liveFixtures(s).length > 0;
-  return viewBody(s, view, ch, strip) + (strip ? liveStripHTML(s) : '');
+  return viewBody(s, view, ch, strip) + liveStripHTML(s);
 }
 
 function viewBody(s, view, ch, strip) {
@@ -299,17 +298,15 @@ function liveCard(s, board, suggested, ch, waiting = false) {
   </article>`;
 }
 
-/** Live scores along the bottom of the non-live screens: one slot per board. */
-function liveStripHTML(s) {
-  const next = T.nextUp(s);
-  const slot = (board) => {
-    const name = esc(s.config.boardNames[board - 1]);
-    const f = T.liveOnBoard(s, board);
-    if (!f) {
-      const n = next[board] ?? next.waiting?.[board];
-      return `<div class="ls-slot idle"><span class="ls-board">${name}</span>
-        <span class="ls-idle">${n ? `Next up: <strong>${esc(slotName(s, n, 'home'))}</strong> v <strong>${esc(slotName(s, n, 'away'))}</strong>` : 'Free'}</span></div>`;
-    }
+/**
+ * Live scores along the bottom of the non-live screens: only the matches in
+ * progress (one centred slot when just one board is playing; nothing when none).
+ */
+function liveStripHTML(s, matches = T.liveFixtures(s)) {
+  const list = [...matches].sort((a, b) => (a.board ?? 0) - (b.board ?? 0));
+  if (!list.length) return '';
+  const slot = (f) => {
+    const name = esc(s.config.boardNames[(f.board ?? 1) - 1]);
     const lead = f.homeLegs === f.awayLegs ? '' : f.homeLegs > f.awayLegs ? 'home' : 'away';
     const stake = I.matchStakes(s, f).lines[0];
     return `<div class="ls-slot"><span class="ls-board">${name}<i>● LIVE</i></span>
@@ -320,7 +317,7 @@ function liveStripHTML(s) {
       </div>
       <span class="ls-sub">${esc(stake ?? stageName(f))}</span></div>`;
   };
-  return `<section class="live-strip">${slot(1)}${slot(2)}</section>`;
+  return `<section class="live-strip n${list.length}">${list.map(slot).join('')}</section>`;
 }
 
 /** "What's at stake" line under a live match (falls back to the match format). */
@@ -772,12 +769,6 @@ function finalFixture(s) {
   if (s?.phase !== 'knockout') return null;
   const f = s.fixtures.find((x) => x.stage === 'final');
   return f?.homeId && f?.awayId && f.status !== 'done' ? f : null;
-}
-
-/** The final spotlight is the live screen unless another match (3rd place) is on and the final isn't. */
-function finalIsAuto(s) {
-  const f = finalFixture(s);
-  return !!f && (f.status === 'live' || !T.liveFixtures(s).length);
 }
 
 /** One line for the big moment: deciding leg, a leg from the title, or what's at stake. */

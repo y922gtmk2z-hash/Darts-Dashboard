@@ -360,13 +360,14 @@ test('live scores stay along the bottom of every other TV screen and update with
   await tv.waitForSelector('.live-card:not(.idle)');
   assert.equal(await tv.locator('.live-strip').count(), 0); // the live screen already shows the boards
   await tv.goto(`${base}/index.html?view=chart`);
-  await tv.waitForSelector('.live-strip .ls-slot:not(.idle)');
+  await tv.waitForSelector('.live-strip .ls-slot');
   assert.equal(await tv.textContent(`.live-strip [data-legs="${id}-home"]`), '0');
   await admin.click('.kbd-help');
   await admin.keyboard.press('q');
   await tv.waitForFunction((fid) => document.querySelector(`.live-strip [data-legs="${fid}-home"]`)?.textContent === '1', id);
-  // The free board shows what's next.
-  assert.match(await tv.textContent('.live-strip .ls-slot.idle'), /Next up|Free/);
+  // Only matches in progress: the free board gets no slot.
+  assert.equal(await tv.locator('.live-strip .ls-slot').count(), 1);
+  assert.equal(await tv.locator('.live-strip.n1').count(), 1);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -447,6 +448,21 @@ test('the final takes over the TV: head to head and the live score', { skip }, a
   assert.match(await tv.textContent('.fs-moment'), /a leg from the title/);
   await tv.waitForSelector('.fs-row.now');
   assert.match(await tv.textContent('.fs-row.now'), /70\.00.*Average in the final/s);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the final spotlight replaces the live screen while the 3rd place play-off is on', { skip }, async () => {
+  let s = loadDemoTeams(T.createTournament({ thirdPlace: true, finalAlone: false }), 8);
+  s = simulateUntil(T.startLeague(s), (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done') && !T.liveFixtures(x).length, seededRandom(3));
+  s = T.startMatch(s, '3P', 2);
+  const { ctx, tv, errors } = await openPair({ state: s });
+  await tv.waitForSelector('.final-spot');
+  assert.match(await tv.textContent('.fs-head'), /Up next · after the 3rd place play-off/);
+  // The strip shows only the match in progress: the 3rd place play-off, not the final.
+  assert.equal(await tv.locator('.live-strip .ls-slot').count(), 1);
+  assert.equal(await tv.locator('.live-strip [data-legs="3P-home"]').count(), 1);
+  assert.equal(await tv.locator('.live-strip [data-legs="F-home"]').count(), 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
