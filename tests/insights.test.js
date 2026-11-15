@@ -231,7 +231,34 @@ test('tale of the tape for the final: route, stat edge and bar shares', () => {
   assert.ok(tape.route.away[0].won);
   assert.equal(tape.edge.home + tape.edge.away, tape.rows.filter((r) => r.better).length);
   const won = tape.rows.find((r) => r.label === 'Won – lost');
-  assert.equal(won.share, 2 / 3); // A won 2 league matches, B 1
+  assert.equal(won.share, 3 / 5); // all stages: A won 2 league + SF1, B 1 league + SF2
   assert.equal(tape.rows.find((r) => r.label === 'League finish').share, null);
   assert.equal(tape.meetings.length, 1);
+});
+
+test('form and stats count knockout matches; the league table does not', () => {
+  const fx = [
+    result('A', 'B', 2, 1), result('C', 'D', 2, 0), result('A', 'C', 2, 0), result('B', 'D', 2, 1),
+    { ...result('A', 'D', 0, 2), homeAvg: 40, awayAvg: 90, id: 'SF1', stage: 'semi' },
+    { ...result('C', 'B', 0, 2), id: 'SF2', stage: 'semi' },
+    { ...pending('D', 'B'), id: 'F', stage: 'final' },
+  ];
+  const s = { ...state(['A', 'B', 'C', 'D'], fx), seeds: ['A', 'B', 'C', 'D'], phase: 'knockout' };
+  const o = I.overallRecords(s);
+  assert.deepEqual(o.get('A').form, ['W', 'W', 'L']);
+  assert.equal(o.get('A').played, 3);
+  assert.equal(o.get('A').legDiff, (2 - 1) + (2 - 0) + (0 - 2));
+  assert.equal(o.get('D').avg, 90);
+  // Tale of the tape for the final uses the overall record and form.
+  const tape = I.taleOfTheTape(s, T.fixtureById(s, 'F'));
+  assert.equal(tape.rows.find((r) => r.label === 'Won – lost').home, '1–2'); // D: lost twice in the league, won SF1
+  assert.deepEqual(tape.form.home, ['L', 'L', 'W']);
+  // Spotlight carries the overall record next to the league row.
+  const sp = I.teamSpotlight(s, 'D');
+  assert.equal(sp.overall.won, 1);
+  assert.equal(sp.row.won, 0);
+  // A seed-4 win over seed 1 in the semis is the biggest upset.
+  const up = I.records(s).upset;
+  assert.equal(up.fixture.id, 'SF1');
+  assert.equal(up.gap, 3);
 });

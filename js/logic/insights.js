@@ -179,14 +179,49 @@ export function headToHead(state) {
   return map;
 }
 
+// ---------------------------------------------------------------- record over every stage
+
+/**
+ * Each team's record over every finished match, league and knockout:
+ * Map teamId -> { played, won, lost, legsFor, legsAgainst, legDiff, avg, avgCount, form }.
+ * form: the last 5 results (oldest first) across all stages. The league table
+ * itself stays league-only (it decides the seeding); this is for form and stats.
+ */
+export function overallRecords(state) {
+  const out = new Map(state.teams.map((t) => [t.id, { teamId: t.id, played: 0, won: 0, lost: 0, legsFor: 0, legsAgainst: 0, legDiff: 0, avg: null, avgCount: 0, avgSum: 0, form: [] }]));
+  for (const f of finishedAll(state)) {
+    for (const side of ['home', 'away']) {
+      const r = out.get(f[`${side}Id`]);
+      if (!r) continue;
+      const mine = side === 'home' ? f.homeLegs : f.awayLegs;
+      const theirs = side === 'home' ? f.awayLegs : f.homeLegs;
+      r.played++;
+      r.legsFor += mine;
+      r.legsAgainst += theirs;
+      if (mine > theirs) r.won++;
+      else r.lost++;
+      r.form.push(mine > theirs ? 'W' : 'L');
+      const avg = f[`${side}Avg`];
+      if (typeof avg === 'number') { r.avgSum += avg; r.avgCount++; }
+    }
+  }
+  for (const r of out.values()) {
+    r.legDiff = r.legsFor - r.legsAgainst;
+    r.avg = r.avgCount ? round2(r.avgSum / r.avgCount) : null;
+    r.form = r.form.slice(-5);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- matchup preview
 
 /** Table position, points and form of both teams, plus their last meeting. */
 export function matchupPreview(state, f) {
   const rows = new Map(computeStandings(state.teams, state.fixtures, state.config, { includeLive: true }).map((r) => [r.teamId, r]));
+  const overall = overallRecords(state);
   const side = (id) => {
     const r = rows.get(id);
-    return r ? { teamId: id, position: r.position, points: r.points, played: r.played, form: r.form } : null;
+    return r ? { teamId: id, position: r.position, points: r.points, played: r.played, form: overall.get(id)?.form ?? r.form } : null;
   };
   const last = finishedAll(state).filter((x) => plays(x, f.homeId) && plays(x, f.awayId)).pop() ?? null;
   return { home: side(f.homeId), away: side(f.awayId), last };
@@ -231,8 +266,9 @@ export function averagesBoard(state, { top = 5 } = {}) {
  * - longest: the best run(s) so far, { teamIds, length }
  * - hot: teams on 3+ wins in a row now, longest first
  * - whitewashes: wins without dropping a leg (only when a match is more than one leg)
- * - upset: league win with the biggest gap in table position beforehand
- *   (both teams had played at least 2 league matches), or null
+ * - upset: the win with the biggest gap in table position beforehand: league
+ *   matches (both teams had played at least 2 league matches) and knockout
+ *   matches (by seed, i.e. league finish), or null
  */
 export function records(state) {
   const streaks = new Map(state.teams.map((t) => [t.id, { current: 0, longest: 0 }]));
@@ -265,6 +301,13 @@ export function records(state) {
     }
     for (const id of [f.homeId, f.awayId]) playedBefore.set(id, (playedBefore.get(id) ?? 0) + 1);
   });
+  // Knockout: a lower seed (league finish) beating a higher one counts too.
+  const seedOf = (id) => (state.seeds ?? []).indexOf(id) + 1;
+  for (const f of finishedAll(state).filter((x) => x.stage !== 'league')) {
+    const wp = seedOf(winnerId(f));
+    const lp = seedOf(loserId(f));
+    if (wp && lp && wp - lp > 0 && (!upset || wp - lp > upset.gap)) upset = { fixture: f, winnerId: winnerId(f), loserId: loserId(f), winnerPos: wp, loserPos: lp, gap: wp - lp };
+  }
   return { streaks, longest, hot, whitewashes, upset };
 }
 
@@ -378,7 +421,8 @@ export function resultSummary(state, f) {
 // ---------------------------------------------------------------- team spotlight
 
 /**
- * One team's night: { teamId, row (live table), results [{ f, opponentId, won,
+ * One team's night: { teamId, row (live league table), overall (record over
+ * every stage, see overallRecords), results [{ f, opponentId, won,
  * forLegs, againstLegs, avg }], averages [numbers in order], live, next }.
  */
 export function teamSpotlight(state, teamId) {
@@ -393,7 +437,8 @@ export function teamSpotlight(state, teamId) {
   const live = state.fixtures.find((f) => f.status === 'live' && plays(f, teamId)) ?? null;
   const next = state.fixtures.filter((f) => f.status === 'scheduled' && plays(f, teamId) && f.homeId && f.awayId)
     .sort((a, b) => a.order - b.order)[0] ?? null;
-  return { teamId, row, results, averages, live, next };
+  const overall = overallRecords(state).get(teamId) ?? null;
+  return { teamId, row, overall, results, averages, live, next };
 }
 
 // ---------------------------------------------------------------- knockout: tale of the tape
@@ -417,13 +462,19 @@ export function taleOfTheTape(state, f) {
   const cmp = (a, b, higher = true) => (a == null || b == null || a === b ? null : (a > b) === higher ? 'home' : 'away');
   const h = byId.get(f.homeId);
   const a = byId.get(f.awayId);
+  // Record, leg difference and form count every stage played so far (league + knockout).
+  const overall = overallRecords(state);
+  const oh = overall.get(f.homeId);
+  const oa = overall.get(f.awayId);
   const fmt2 = (n) => (typeof n === 'number' ? n.toFixed(2) : '–');
   const signed = (n) => (n > 0 ? `+${n}` : `${n}`);
   const rows = [];
   if (h && a) {
     rows.push({ label: 'League finish', home: ordinal(h.position), away: ordinal(a.position), better: cmp(h.position, a.position, false) });
-    rows.push({ label: 'Won – lost', home: `${h.won}–${h.lost}`, away: `${a.won}–${a.lost}`, better: cmp(h.won - h.lost, a.won - a.lost) });
-    rows.push({ label: 'Leg difference', home: signed(h.legDiff), away: signed(a.legDiff), better: cmp(h.legDiff, a.legDiff) });
+  }
+  if (oh && oa) {
+    rows.push({ label: 'Won – lost', home: `${oh.won}–${oh.lost}`, away: `${oa.won}–${oa.lost}`, better: cmp(oh.won - oh.lost, oa.won - oa.lost) });
+    rows.push({ label: 'Leg difference', home: signed(oh.legDiff), away: signed(oa.legDiff), better: cmp(oh.legDiff, oa.legDiff) });
   }
   const ah = seasonAvg.get(f.homeId) ?? null;
   const aa = seasonAvg.get(f.awayId) ?? null;
@@ -436,7 +487,7 @@ export function taleOfTheTape(state, f) {
   rows.push({ label: 'Longest winning run', home: String(lh), away: String(la), better: cmp(lh, la) });
   // Share of a two-way bar for the home side (0..1) where both values are counts or averages.
   const share = (x, y) => (typeof x === 'number' && typeof y === 'number' && x >= 0 && y >= 0 && x + y > 0 ? x / (x + y) : null);
-  const shares = { 'Won – lost': h && a ? share(h.won, a.won) : null, '3-dart average': share(ah, aa), 'Best match average': share(bh, ba), 'Longest winning run': share(lh, la) };
+  const shares = { 'Won – lost': oh && oa ? share(oh.won, oa.won) : null, '3-dart average': share(ah, aa), 'Best match average': share(bh, ba), 'Longest winning run': share(lh, la) };
   for (const row of rows) row.share = shares[row.label] ?? null;
   const meetings = finishedAll(state).filter((x) => x.id !== f.id && plays(x, f.homeId) && plays(x, f.awayId));
   const homeWins = meetings.filter((x) => winnerId(x) === f.homeId).length;
@@ -450,7 +501,7 @@ export function taleOfTheTape(state, f) {
   const edge = { home: rows.filter((r) => r.better === 'home').length, away: rows.filter((r) => r.better === 'away').length };
   return {
     seeds: { home: seed(f.homeId), away: seed(f.awayId) },
-    form: { home: h?.form ?? [], away: a?.form ?? [] },
+    form: { home: oh?.form ?? [], away: oa?.form ?? [] },
     rows,
     edge,
     route: { home: route(f.homeId), away: route(f.awayId) },
