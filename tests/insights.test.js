@@ -214,3 +214,24 @@ test('tale of the tape: rows, better side and earlier meetings', () => {
   assert.equal(tape.meetings.length, 2);
   assert.deepEqual(tape.meetingsWon, { home: 1, away: 1 });
 });
+
+test('tale of the tape for the final: route, stat edge and bar shares', () => {
+  const fx = [
+    result('A', 'B', 2, 1), result('C', 'D', 2, 0), result('A', 'C', 2, 0), result('B', 'D', 2, 1),
+    { ...result('A', 'D', 2, 1), id: 'SF1', stage: 'semi' },
+    { ...result('C', 'B', 0, 2), id: 'SF2', stage: 'semi' },
+    { ...pending('A', 'B'), id: 'F', stage: 'final' },
+  ];
+  const s = { ...state(['A', 'B', 'C', 'D'], fx), seeds: ['A', 'B', 'C', 'D'], phase: 'knockout' };
+  const tape = I.taleOfTheTape(s, T.fixtureById(s, 'F'));
+  assert.equal(tape.route.home.length, 1);
+  assert.equal(tape.route.home[0].opponentId, 'D');
+  assert.deepEqual([tape.route.home[0].forLegs, tape.route.home[0].againstLegs], [2, 1]);
+  assert.equal(tape.route.away[0].opponentId, 'C');
+  assert.ok(tape.route.away[0].won);
+  assert.equal(tape.edge.home + tape.edge.away, tape.rows.filter((r) => r.better).length);
+  const won = tape.rows.find((r) => r.label === 'Won – lost');
+  assert.equal(won.share, 2 / 3); // A won 2 league matches, B 1
+  assert.equal(tape.rows.find((r) => r.label === 'League finish').share, null);
+  assert.equal(tape.meetings.length, 1);
+});

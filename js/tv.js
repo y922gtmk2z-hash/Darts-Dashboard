@@ -12,7 +12,7 @@ const W = 1920;
 const H = 1080;
 const params = new URLSearchParams(location.search);
 const PREVIEW = params.has('preview');
-const PINNED = ['table', 'fixtures', 'bracket', 'chart', 'grid', 'stats', 'team', 'tape'].includes(params.get('view')) ? params.get('view') : null;
+const PINNED = ['table', 'fixtures', 'bracket', 'chart', 'grid', 'stats', 'team', 'tape', 'final'].includes(params.get('view')) ? params.get('view') : null;
 // ?rotate=N in the address overrides the admin setting (Settings → TV screens).
 const URL_ROTATE = params.has('rotate') ? Math.max(0, Number(params.get('rotate')) || 0) : null;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -43,9 +43,11 @@ function viewsFor(s) {
   const hasChart = I.finishedLeague(s).length >= 2;
   const hasStats = s.fixtures.some((f) => f.status === 'done');
   // The knockout gets its own set: tale of the tape for the next match(es), the
-  // bracket, the final league table, the four teams still in, and stats.
+  // bracket, the final league table, the four teams still in, and stats. Once
+  // the finalists are known the live screen itself becomes the final spotlight.
+  const ko = finalFixture(s) ? [] : ['tape'];
   const views = s.phase === 'league' ? ['auto', 'table', 'chart', 'grid', 'team', 'stats', 'fixtures']
-    : s.phase === 'knockout' ? ['auto', 'tape', 'bracket', 'table', 'team', 'stats']
+    : s.phase === 'knockout' ? ['auto', ...ko, 'bracket', 'table', 'team', 'stats']
       : ['auto', 'bracket', 'table', 'chart', 'team', 'stats'];
   return views.filter((v) => (v !== 'chart' || hasChart) && (v !== 'stats' || hasStats)
     && (v !== 'tape' || pendingKnockout(s).length > 0) && (v !== 'team' || hasStats));
@@ -178,7 +180,7 @@ function header(s) {
   let phase = '';
   if (s.phase === 'setup') phase = 'Starting soon';
   else if (s.phase === 'league') phase = `League · ${played} of ${total} played`;
-  else if (s.phase === 'knockout') phase = 'Knockout';
+  else if (s.phase === 'knockout') phase = finalFixture(s) ? 'The Final' : 'Knockout';
   else phase = 'Final result';
   const pct = s.phase === 'league' && total ? Math.round((played / total) * 100) : s.phase === 'setup' ? 0 : 100;
   return `<header class="tv-head">
@@ -200,10 +202,16 @@ const STRIP_H = 142;
 
 function body(s, view, ch) {
   if (s.phase === 'setup') return setupView(s);
+  if (view === 'auto' && finalFixture(s)) view = 'final';
+  if (view === 'final') {
+    // The final has the stage; anything else still being played goes along the bottom.
+    const others = T.liveFixtures(s).filter((f) => f.stage !== 'final');
+    return finalView(s, others.length > 0) + liveStripHTML(s, others);
+  }
   if (view === 'auto') return viewBody(s, view, ch, false);
   // Every other screen (rotating or pinned) keeps the live scores along the bottom.
   const strip = T.liveFixtures(s).length > 0;
-  return viewBody(s, view, ch, strip) + (strip ? liveStripHTML(s) : '');
+  return viewBody(s, view, ch, strip) + liveStripHTML(s);
 }
 
 function viewBody(s, view, ch, strip) {
@@ -290,17 +298,15 @@ function liveCard(s, board, suggested, ch, waiting = false) {
   </article>`;
 }
 
-/** Live scores along the bottom of the non-live screens: one slot per board. */
-function liveStripHTML(s) {
-  const next = T.nextUp(s);
-  const slot = (board) => {
-    const name = esc(s.config.boardNames[board - 1]);
-    const f = T.liveOnBoard(s, board);
-    if (!f) {
-      const n = next[board] ?? next.waiting?.[board];
-      return `<div class="ls-slot idle"><span class="ls-board">${name}</span>
-        <span class="ls-idle">${n ? `Next up: <strong>${esc(slotName(s, n, 'home'))}</strong> v <strong>${esc(slotName(s, n, 'away'))}</strong>` : 'Free'}</span></div>`;
-    }
+/**
+ * Live scores along the bottom of the non-live screens: only the matches in
+ * progress (one centred slot when just one board is playing; nothing when none).
+ */
+function liveStripHTML(s, matches = T.liveFixtures(s)) {
+  const list = [...matches].sort((a, b) => (a.board ?? 0) - (b.board ?? 0));
+  if (!list.length) return '';
+  const slot = (f) => {
+    const name = esc(s.config.boardNames[(f.board ?? 1) - 1]);
     const lead = f.homeLegs === f.awayLegs ? '' : f.homeLegs > f.awayLegs ? 'home' : 'away';
     const stake = I.matchStakes(s, f).lines[0];
     return `<div class="ls-slot"><span class="ls-board">${name}<i>● LIVE</i></span>
@@ -311,7 +317,7 @@ function liveStripHTML(s) {
       </div>
       <span class="ls-sub">${esc(stake ?? stageName(f))}</span></div>`;
   };
-  return `<section class="live-strip">${slot(1)}${slot(2)}</section>`;
+  return `<section class="live-strip n${list.length}">${list.map(slot).join('')}</section>`;
 }
 
 /** "What's at stake" line under a live match (falls back to the match format). */
@@ -634,6 +640,8 @@ if (PINNED === 'team') setInterval(() => { spotlightIndex++; render({ transition
 
 /** Teams to feature: everyone in table order; from the knockout on, the four still in. */
 function spotlightTeams(s) {
+  const fin = finalFixture(s);
+  if (fin) return [fin.homeId, fin.awayId];
   if (s.phase !== 'league' && s.seeds?.length) return s.seeds.filter((id) => T.teamById(s, id));
   return T.liveStandings(s).map((r) => r.teamId);
 }
@@ -752,6 +760,103 @@ function tapeCard(s, f) {
     </div>`).join('')}</div>
     ${meet}
   </article>`;
+}
+
+// ---------- the final: spotlight with head-to-head and the live score
+
+/** The final once both finalists are known, until it is finished. */
+function finalFixture(s) {
+  if (s?.phase !== 'knockout') return null;
+  const f = s.fixtures.find((x) => x.stage === 'final');
+  return f?.homeId && f?.awayId && f.status !== 'done' ? f : null;
+}
+
+/** One line for the big moment: deciding leg, a leg from the title, or what's at stake. */
+function finalMoment(s, f) {
+  if (f.status !== 'live') return 'Winner takes the title';
+  const need = legsToWinFor(s.config, 'final');
+  const h = f.homeLegs === need - 1;
+  const a = f.awayLegs === need - 1;
+  if (need === 1) return 'One leg for the title';
+  if (h && a) return 'Deciding leg for the title';
+  if (h || a) return `${T.teamName(s, h ? f.homeId : f.awayId)} a leg from the title`;
+  return `First to ${need} takes the title`;
+}
+
+function finalView(s, strip = false) {
+  const f = finalFixture(s);
+  if (!f) return `<section class="panel full">${panelTitle('The Final')}<p class="empty">The final appears here once both finalists are known.</p></section>`;
+  const t = I.taleOfTheTape(s, f);
+  const live = f.status === 'live';
+  const need = legsToWinFor(s.config, 'final');
+  const name = (id) => esc(T.teamName(s, id));
+  const otherLive = T.liveFixtures(s).find((x) => x.id !== f.id);
+  const status = live
+    ? `<span class="pill live">● LIVE · ${esc(s.config.boardNames[f.board - 1])}</span>`
+    : `<span class="pill">Up next${otherLive ? ` · after the ${esc(stageName(otherLive).toLowerCase())}` : ''}</span>`;
+  const side = (which) => {
+    const id = which === 'home' ? f.homeId : f.awayId;
+    const legs = which === 'home' ? f.homeLegs : f.awayLegs;
+    const other = which === 'home' ? f.awayLegs : f.homeLegs;
+    const seed = t.seeds[which];
+    const route = t.route[which].map((r) => `<span class="fs-route-item">${r.won ? 'Beat' : 'Lost to'} <strong>${name(r.opponentId)}</strong> <b class="num">${r.forLegs}–${r.againstLegs}</b> <em>${esc(stageName(r.f, { short: true }))}</em></span>`).join('');
+    return `<div class="fs-team ${which} ${live && legs > other ? 'leading' : ''}">
+      ${seed ? `<span class="tp-seed">Seed ${seed}</span>` : ''}
+      <div class="fs-name">${name(id)}</div>
+      ${playersText(s, id) ? `<div class="fs-players">${esc(playersText(s, id))}</div>` : ''}
+      ${route ? `<div class="fs-route">${route}</div>` : ''}
+      <div class="tp-form fs-form">${t.form[which].map((x) => `<i class="${x}">${x}</i>`).join('')}</div>
+    </div>`;
+  };
+  const pips = (legs) => `<span class="fs-pips">${Array.from({ length: need }, (_, i) => `<i class="${i < legs ? 'on' : ''}"></i>`).join('')}</span>`;
+  const centre = live
+    ? `<div class="fs-score num"><span data-legs="${f.id}-home">${f.homeLegs}</span><b>–</b><span data-legs="${f.id}-away">${f.awayLegs}</span></div>
+       <div class="fs-pip-row">${pips(f.homeLegs)}<em>legs</em>${pips(f.awayLegs)}</div>`
+    : '<div class="fs-vs">v</div>';
+  // This match's 3-dart averages go first while they are being entered.
+  const rows = [...t.rows];
+  if (live && (f.homeAvg != null || f.awayAvg != null)) {
+    const ha = f.homeAvg ?? null;
+    const aa = f.awayAvg ?? null;
+    const better = ha == null || aa == null || ha === aa ? null : ha > aa ? 'home' : 'away';
+    const share = ha != null && aa != null && ha + aa > 0 ? ha / (ha + aa) : null;
+    rows.unshift({ label: 'Average in the final', home: fmtAvg(ha) || '–', away: fmtAvg(aa) || '–', better, share, now: true });
+  }
+  const bar = (r) => (r.share == null ? '' : `<div class="fs-bar"><i class="h ${r.better === 'home' ? 'best' : ''}" style="width:${(r.share * 100).toFixed(1)}%"></i><i class="a ${r.better === 'away' ? 'best' : ''}" style="width:${((1 - r.share) * 100).toFixed(1)}%"></i></div>`);
+  const compare = rows.map((r) => `<div class="fs-row ${r.now ? 'now' : ''}">
+      <span class="v h ${r.better === 'home' ? 'best' : ''}">${esc(r.home)}</span>
+      <div class="fs-mid"><span class="lbl">${r.now ? '<i class="dot">●</i> ' : ''}${esc(r.label)}</span>${bar(r)}</div>
+      <span class="v a ${r.better === 'away' ? 'best' : ''}">${esc(r.away)}</span>
+    </div>`).join('');
+  const meetings = t.meetings.length
+    ? `<span class="fs-foot-lbl">Tonight</span><strong class="num">${t.meetingsWon.home}–${t.meetingsWon.away}</strong>
+       <span class="fs-chips">${t.meetings.map((m) => {
+         const mine = m.homeId === f.homeId ? m.homeLegs : m.awayLegs;
+         const theirs = m.homeId === f.homeId ? m.awayLegs : m.homeLegs;
+         return `<i class="${mine > theirs ? 'W' : 'L'}">${mine}–${theirs}</i>`;
+       }).join('')}</span><em>${name(f.homeId)}’s score first</em>`
+    : '<span class="fs-foot-lbl">Tonight</span><em>First meeting of the night</em>';
+  const edge = t.edge.home === t.edge.away
+    ? `Level on the stats <strong class="num">${t.edge.home}–${t.edge.away}</strong>`
+    : `${name(t.edge.home > t.edge.away ? f.homeId : f.awayId)} edge the stats <strong class="num">${Math.max(t.edge.home, t.edge.away)}–${Math.min(t.edge.home, t.edge.away)}</strong>`;
+  return `<section class="final-spot ${live ? 'is-live' : ''} ${strip ? 'with-strip' : ''}">
+    <div class="fs-head">
+      <span class="fs-trophy" aria-hidden="true">🏆</span>
+      <h2>The Final</h2>
+      <span class="fs-format">${esc(formatLine(s, f))}</span>
+      ${status}
+    </div>
+    <div class="fs-top">
+      ${side('home')}
+      <div class="fs-centre">${centre}<div class="fs-moment ${live ? 'live' : ''}">${esc(finalMoment(s, f))}</div></div>
+      ${side('away')}
+    </div>
+    <div class="panel fs-compare">
+      <div class="fs-compare-head"><span>${name(f.homeId)}</span><h3>Head to head</h3><span>${name(f.awayId)}</span></div>
+      <div class="fs-rows">${compare}</div>
+      <div class="fs-foot"><div class="fs-meet">${meetings}</div><div class="fs-edge">${edge}</div></div>
+    </div>
+  </section>`;
 }
 
 // ---------- result banner and "to the oche" call-up (an overlay above every screen)

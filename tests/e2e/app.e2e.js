@@ -360,13 +360,14 @@ test('live scores stay along the bottom of every other TV screen and update with
   await tv.waitForSelector('.live-card:not(.idle)');
   assert.equal(await tv.locator('.live-strip').count(), 0); // the live screen already shows the boards
   await tv.goto(`${base}/index.html?view=chart`);
-  await tv.waitForSelector('.live-strip .ls-slot:not(.idle)');
+  await tv.waitForSelector('.live-strip .ls-slot');
   assert.equal(await tv.textContent(`.live-strip [data-legs="${id}-home"]`), '0');
   await admin.click('.kbd-help');
   await admin.keyboard.press('q');
   await tv.waitForFunction((fid) => document.querySelector(`.live-strip [data-legs="${fid}-home"]`)?.textContent === '1', id);
-  // The free board shows what's next.
-  assert.match(await tv.textContent('.live-strip .ls-slot.idle'), /Next up|Free/);
+  // Only matches in progress: the free board gets no slot.
+  assert.equal(await tv.locator('.live-strip .ls-slot').count(), 1);
+  assert.equal(await tv.locator('.live-strip.n1').count(), 1);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -423,6 +424,45 @@ test('team spotlight and knockout tale-of-the-tape screens', { skip }, async () 
   await tv.waitForSelector('.spot .spot-who h2');
   assert.equal(await tv.textContent('.spot .spot-who h2'), T.teamName(s, s.seeds[0])); // knockout: the four still in, seed 1 first
   assert.match(await tv.textContent('.spot .panel-title .hint'), /1 of 4/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the final takes over the TV: head to head and the live score', { skip }, async () => {
+  let s = simulateUntil(leagueState(8), (x) => x.phase === 'knockout' && !!T.fixtureById(x, 'F').awayId && !T.liveFixtures(x).length, seededRandom(5));
+  const fin = T.fixtureById(s, 'F');
+  const { ctx, admin, tv, errors } = await openPair({ state: s });
+  await tv.waitForSelector('.final-spot');
+  assert.match(await tv.textContent('.fs-head'), /The Final.*Up next/s);
+  assert.equal(await tv.textContent('.fs-team.home .fs-name'), T.teamName(s, fin.homeId));
+  assert.ok(await tv.locator('.fs-row').count() >= 5);
+  assert.match(await tv.textContent('.tv-phase'), /The Final/);
+  await admin.click('.tabs [data-tab="live"]');
+  await admin.click('[data-action="start"][data-id="F"][data-board="1"]');
+  await tv.waitForSelector('.final-spot.is-live');
+  await admin.fill('#avg-F-home', '70');
+  await admin.press('#avg-F-home', 'Tab');
+  await admin.click('.kbd-help');
+  await admin.keyboard.press('q'); // Board 1, home +1 leg
+  await tv.waitForFunction(() => /1\s*–\s*0/.test(document.querySelector('.fs-score')?.textContent ?? ''));
+  assert.match(await tv.textContent('.fs-moment'), /a leg from the title/);
+  await tv.waitForSelector('.fs-row.now');
+  assert.match(await tv.textContent('.fs-row.now'), /70\.00.*Average in the final/s);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('the final spotlight replaces the live screen while the 3rd place play-off is on', { skip }, async () => {
+  let s = loadDemoTeams(T.createTournament({ thirdPlace: true, finalAlone: false }), 8);
+  s = simulateUntil(T.startLeague(s), (x) => x.phase === 'knockout' && ['SF1', 'SF2'].every((id) => T.fixtureById(x, id).status === 'done') && !T.liveFixtures(x).length, seededRandom(3));
+  s = T.startMatch(s, '3P', 2);
+  const { ctx, tv, errors } = await openPair({ state: s });
+  await tv.waitForSelector('.final-spot');
+  assert.match(await tv.textContent('.fs-head'), /Up next · after the 3rd place play-off/);
+  // The strip shows only the match in progress: the 3rd place play-off, not the final.
+  assert.equal(await tv.locator('.live-strip .ls-slot').count(), 1);
+  assert.equal(await tv.locator('.live-strip [data-legs="3P-home"]').count(), 1);
+  assert.equal(await tv.locator('.live-strip [data-legs="F-home"]').count(), 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -524,6 +564,11 @@ for (const teams of [4, 8, 16]) {
     let x = simulateUntil(leagueState(teams), (y) => y.phase === 'knockout' && T.liveFixtures(y).length > 0, seededRandom(1));
     for (const f of T.liveFixtures(x)) x = T.setAverage(T.setAverage(x, f.id, 'home', '77.7'), f.id, 'away', '180');
     return x;
+  }]);
+  layoutCases.push([`${teams} teams · final live`, () => {
+    let x = simulateUntil(leagueState(teams), (y) => y.phase === 'knockout' && !!T.fixtureById(y, 'F').awayId && !T.liveFixtures(y).length, seededRandom(4));
+    x = T.adjustLegs(T.startMatch(x, 'F', 2), 'F', 'away', 1);
+    return T.setAverage(T.setAverage(x, 'F', 'home', '101.25'), 'F', 'away', '58.5');
   }]);
   layoutCases.push([`${teams} teams · complete`, () => simulateUntil(leagueState(teams), (x) => x.phase === 'complete', seededRandom(2))]);
 }
