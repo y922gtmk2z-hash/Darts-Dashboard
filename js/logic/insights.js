@@ -400,8 +400,10 @@ export function teamSpotlight(state, teamId) {
 
 /**
  * Side-by-side comparison of the two teams in a knockout match. Rows are
- * { label, home, away, better: 'home' | 'away' | null } with display values;
- * `meetings` are their earlier matches tonight (any stage), oldest first.
+ * { label, home, away, better: 'home' | 'away' | null, share } with display
+ * values (share: the home side's part of a two-way bar, or null); `edge`
+ * counts the rows each side wins; `route` lists each side's earlier knockout
+ * matches; `meetings` are their earlier matches tonight (any stage), oldest first.
  */
 export function taleOfTheTape(state, f) {
   const league = computeStandings(state.teams, state.fixtures, state.config);
@@ -432,12 +434,26 @@ export function taleOfTheTape(state, f) {
   const lh = streaks.get(f.homeId)?.longest ?? 0;
   const la = streaks.get(f.awayId)?.longest ?? 0;
   rows.push({ label: 'Longest winning run', home: String(lh), away: String(la), better: cmp(lh, la) });
+  // Share of a two-way bar for the home side (0..1) where both values are counts or averages.
+  const share = (x, y) => (typeof x === 'number' && typeof y === 'number' && x >= 0 && y >= 0 && x + y > 0 ? x / (x + y) : null);
+  const shares = { 'Won – lost': h && a ? share(h.won, a.won) : null, '3-dart average': share(ah, aa), 'Best match average': share(bh, ba), 'Longest winning run': share(lh, la) };
+  for (const row of rows) row.share = shares[row.label] ?? null;
   const meetings = finishedAll(state).filter((x) => x.id !== f.id && plays(x, f.homeId) && plays(x, f.awayId));
   const homeWins = meetings.filter((x) => winnerId(x) === f.homeId).length;
+  // Earlier knockout wins: how each team got here ("beat X 2–1 in the semi-final").
+  const route = (id) => finishedAll(state).filter((x) => x.stage !== 'league' && x.id !== f.id && plays(x, id)).map((x) => {
+    const home = x.homeId === id;
+    const forLegs = home ? x.homeLegs : x.awayLegs;
+    const againstLegs = home ? x.awayLegs : x.homeLegs;
+    return { f: x, opponentId: home ? x.awayId : x.homeId, won: forLegs > againstLegs, forLegs, againstLegs, avg: home ? x.homeAvg : x.awayAvg };
+  });
+  const edge = { home: rows.filter((r) => r.better === 'home').length, away: rows.filter((r) => r.better === 'away').length };
   return {
     seeds: { home: seed(f.homeId), away: seed(f.awayId) },
     form: { home: h?.form ?? [], away: a?.form ?? [] },
     rows,
+    edge,
+    route: { home: route(f.homeId), away: route(f.awayId) },
     meetings,
     meetingsWon: { home: homeWins, away: meetings.length - homeWins },
   };

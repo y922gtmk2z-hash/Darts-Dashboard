@@ -427,6 +427,30 @@ test('team spotlight and knockout tale-of-the-tape screens', { skip }, async () 
   await ctx.close();
 });
 
+test('the final takes over the TV: head to head and the live score', { skip }, async () => {
+  let s = simulateUntil(leagueState(8), (x) => x.phase === 'knockout' && !!T.fixtureById(x, 'F').awayId && !T.liveFixtures(x).length, seededRandom(5));
+  const fin = T.fixtureById(s, 'F');
+  const { ctx, admin, tv, errors } = await openPair({ state: s });
+  await tv.waitForSelector('.final-spot');
+  assert.match(await tv.textContent('.fs-head'), /The Final.*Up next/s);
+  assert.equal(await tv.textContent('.fs-team.home .fs-name'), T.teamName(s, fin.homeId));
+  assert.ok(await tv.locator('.fs-row').count() >= 5);
+  assert.match(await tv.textContent('.tv-phase'), /The Final/);
+  await admin.click('.tabs [data-tab="live"]');
+  await admin.click('[data-action="start"][data-id="F"][data-board="1"]');
+  await tv.waitForSelector('.final-spot.is-live');
+  await admin.fill('#avg-F-home', '70');
+  await admin.press('#avg-F-home', 'Tab');
+  await admin.click('.kbd-help');
+  await admin.keyboard.press('q'); // Board 1, home +1 leg
+  await tv.waitForFunction(() => /1\s*–\s*0/.test(document.querySelector('.fs-score')?.textContent ?? ''));
+  assert.match(await tv.textContent('.fs-moment'), /a leg from the title/);
+  await tv.waitForSelector('.fs-row.now');
+  assert.match(await tv.textContent('.fs-row.now'), /70\.00.*Average in the final/s);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('starting the knockout plays the semi-final draw on the TV', { skip }, async () => {
   const s = simulateUntil(leagueState(8), (x) => T.canStartKnockout(x), seededRandom(9));
   const { ctx, admin, tv, errors } = await openPair({ state: s });
@@ -524,6 +548,11 @@ for (const teams of [4, 8, 16]) {
     let x = simulateUntil(leagueState(teams), (y) => y.phase === 'knockout' && T.liveFixtures(y).length > 0, seededRandom(1));
     for (const f of T.liveFixtures(x)) x = T.setAverage(T.setAverage(x, f.id, 'home', '77.7'), f.id, 'away', '180');
     return x;
+  }]);
+  layoutCases.push([`${teams} teams · final live`, () => {
+    let x = simulateUntil(leagueState(teams), (y) => y.phase === 'knockout' && !!T.fixtureById(y, 'F').awayId && !T.liveFixtures(y).length, seededRandom(4));
+    x = T.adjustLegs(T.startMatch(x, 'F', 2), 'F', 'away', 1);
+    return T.setAverage(T.setAverage(x, 'F', 'home', '101.25'), 'F', 'away', '58.5');
   }]);
   layoutCases.push([`${teams} teams · complete`, () => simulateUntil(leagueState(teams), (x) => x.phase === 'complete', seededRandom(2))]);
 }

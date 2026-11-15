@@ -210,12 +210,13 @@ You can also add these to the TV address (they override the setting):
 | `index.html?view=grid` | Head to head: every result between each pair of teams (row team's score first) |
 | `index.html?view=team` | Team spotlight: one team at a time (position, record, form, average match by match, results, next match). Moves to the next team each time it comes round; pinned, every 15 s. From the knockout on, the four teams still in |
 | `index.html?view=tape` | Knockout only: *tale of the tape* for the next knockout match(es), the two semi-finals side by side, then the final: seeds, league finish, record, leg difference, averages, longest run, form and their meetings tonight |
+| `index.html?view=final` | Final spotlight: the two finalists, the live score with leg pips (and who is a leg from the title), how each got there, and a head-to-head comparison: league finish, record, leg difference, averages (plus their average in the final while it's being played), best match, longest run, form, meetings tonight and who edges the stats. Once both finalists are known this **is the live screen** |
 | `index.html?view=stats` | 3-dart averages (best average, best single match, on the up) and streaks & records |
 | `index.html?view=fixtures` | Up next and results |
 | `index.html?view=bracket` | The knockout bracket (during the league: "if it ended now") |
 | `index.html?rotate=15` | Cycles through views every 15 seconds, jumping back to the live view when a score changes (`?rotate=0` = never rotate, whatever the setting) |
 
-When rotating, the league cycles live → table → chart → head to head → team spotlight → stats → fixtures (the chart, spotlight and stats join once there are results). The **knockout has its own set**: live → tale of the tape → bracket → final league table → spotlight on the four teams still in → stats. After the final: champion → bracket → table → chart → spotlight → stats.
+When rotating, the league cycles live → table → chart → head to head → team spotlight → stats → fixtures (the chart, spotlight and stats join once there are results). The **knockout has its own set**: live → tale of the tape → bracket → final league table → spotlight on the four teams still in → stats. Once both finalists are known, the live screen becomes the **final spotlight** (head to head + live score) and the team spotlight shows just the two finalists; if the 3rd place play-off is still on, it keeps the live screen and the final spotlight joins the rotation. After the final: champion → bracket → table → chart → spotlight → stats.
 
 **When a match finishes** the TV shows the result over whatever screen is up for about 6 seconds (*Checkout Charlies beat Bust & Found 2–0 · up to 3rd ▲*, or *through to the final*), then calls the next pair for that board: **To the oche · Board 1** with both teams and players, for about 7 seconds. The final goes straight to the champion screen.
 
