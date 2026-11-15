@@ -467,15 +467,17 @@ test('the final spotlight replaces the live screen while the 3rd place play-off 
   await ctx.close();
 });
 
-test('admin league table: form and average include the knockout', { skip }, async () => {
+test('league tables keep league-only form in the knockout', { skip }, async () => {
   const s = simulateUntil(leagueState(8), (x) => x.phase === 'knockout' && !!T.fixtureById(x, 'F').awayId && !T.liveFixtures(x).length, seededRandom(5));
-  const sf1 = T.fixtureById(s, 'SF1');
-  const winner = sf1.homeLegs > sf1.awayLegs ? sf1.homeId : sf1.awayId;
-  const { ctx, admin, errors } = await openPair({ state: s });
+  const team = T.fixtureById(s, 'SF1').homeId;
+  const league = T.liveStandings(s).find((r) => r.teamId === team).form.join('');
+  const { ctx, admin, tv, errors } = await openPair({ state: s });
   await admin.click('.tabs [data-tab="table"]');
-  const row = admin.locator('table.standings tbody tr', { hasText: T.teamName(s, winner) });
-  assert.equal(await row.locator('td.form span').last().textContent(), 'W'); // the semi-final win
-  assert.match(await row.locator('td.form').getAttribute('title'), /knockout included/);
+  const row = admin.locator('table.standings tbody tr', { hasText: T.teamName(s, team) });
+  assert.equal((await row.locator('td.form span').allTextContents()).join(''), league);
+  await tv.goto(`${base}/index.html?view=table`);
+  await tv.waitForSelector(`.tv-table [data-team-row="${team}"]`);
+  assert.equal((await tv.locator(`.tv-table [data-team-row="${team}"] td.form i`).allTextContents()).join(''), league);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

@@ -377,7 +377,7 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
   const league = s.phase === 'league';
   const quals = league ? I.qualificationStatus(s) : new Map();
   const { streaks } = I.records(s);
-  // Form and average count knockout matches too; P/W/L/+/-/Pts stay league (they decide the seeding).
+  // Average counts knockout matches too; P/W/L/+/-/Pts and form stay league-only.
   const overall = league ? null : I.overallRecords(s);
   // The race column only appears once someone is through, out, or close to sure.
   const race = full && league && [...quals.values()].some((x) => x.status !== 'alive' || (x.needs && x.needs <= 3));
@@ -395,7 +395,7 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.lost}</td>
         <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td><td class="num avg">${fmtAvg(overall ? overall.get(r.teamId)?.avg : r.avg) || '–'}</td>
         <td class="pts num">${r.points}</td>
-        <td class="form">${formHTML(overall ? { ...r, form: overall.get(r.teamId)?.form ?? r.form } : r)}</td>
+        <td class="form">${formHTML(r)}</td>
         ${race ? `<td class="race ${qs?.status ?? ''}">${raceText(qs)}</td>` : ''}
       </tr>`;
     }).join('')}</tbody>

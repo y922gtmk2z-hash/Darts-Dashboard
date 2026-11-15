@@ -975,11 +975,10 @@ function standingsTable(s, { compact = false } = {}) {
   const rows = T.liveStandings(s);
   const showAvg = true; // always shown, so it's clear where averages appear ("–" until recorded)
   const q = s.config.qualifiers;
-  // From the knockout on, Form and Avg count knockout matches too (as on the TV);
-  // P/W/L/LF/LA/LD/Pts stay league-only because they decide the seeding.
+  // From the knockout on, Avg counts knockout matches too (as on the TV);
+  // P/W/L/LF/LA/LD/Pts and Form stay league-only.
   const overall = s.phase === 'league' || s.phase === 'setup' ? null : overallRecords(s);
   const avgOf = (r) => (overall ? overall.get(r.teamId)?.avg : r.avg);
-  const formOf = (r) => (overall ? overall.get(r.teamId)?.form ?? r.form : r.form);
   const avgTitle = overall ? 'Mean 3-dart average over every match (league and knockout) where it was recorded' : 'Mean 3-dart average over league matches where it was recorded';
   return `<table class="standings ${compact ? 'compact' : ''}">
     <thead><tr><th>#</th><th>Team</th><th class="r">P</th><th class="r">W</th><th class="r">L</th>
@@ -990,7 +989,7 @@ function standingsTable(s, { compact = false } = {}) {
       <td class="r num">${r.played}</td><td class="r num">${r.won}</td><td class="r num">${r.lost}</td>
       ${compact ? '' : `<td class="r num">${r.legsFor}</td><td class="r num">${r.legsAgainst}</td>`}
       <td class="r num" ${r.live ? `title="Includes ${r.liveLegDiff > 0 ? '+' : ''}${r.liveLegDiff} from the match being played now"` : ''}>${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="r num avg-col">${fmtAvg(avgOf(r)) || '–'}</td>` : ''}<td class="r num strong">${r.points}</td>
-      ${compact ? '' : `<td class="form" ${overall ? 'title="Last 5 matches, knockout included"' : ''}>${formOf(r).map((x) => `<span class="${x}">${x}</span>`).join('')}</td>`}
+      ${compact ? '' : `<td class="form">${r.form.map((x) => `<span class="${x}">${x}</span>`).join('')}</td>`}
     </tr>`).join('')}</tbody></table>`;
 }
 
