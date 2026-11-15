@@ -5,6 +5,7 @@ import * as T from './logic/tournament.js';
 import { knockoutSeeding, bracketView, winnerOf } from './logic/bracket.js';
 import { legsToWinFor, bestOfFor, MIN_TEAMS, MAX_TEAMS } from './logic/config.js';
 import { loadDemoTeams, simulateStep, simulateMatch, simulateUntil } from './logic/simulate.js';
+import { overallRecords } from './logic/insights.js';
 import {
   esc, stageName, slotName, playersText, teamText, teamBlock, slotBlock, fmtAvg, formatLine, legsFormat, phaseLabel, timeAgo, applyTheme, registerServiceWorker,
 } from './view.js';
@@ -974,16 +975,22 @@ function standingsTable(s, { compact = false } = {}) {
   const rows = T.liveStandings(s);
   const showAvg = true; // always shown, so it's clear where averages appear ("–" until recorded)
   const q = s.config.qualifiers;
+  // From the knockout on, Form and Avg count knockout matches too (as on the TV);
+  // P/W/L/LF/LA/LD/Pts stay league-only because they decide the seeding.
+  const overall = s.phase === 'league' || s.phase === 'setup' ? null : overallRecords(s);
+  const avgOf = (r) => (overall ? overall.get(r.teamId)?.avg : r.avg);
+  const formOf = (r) => (overall ? overall.get(r.teamId)?.form ?? r.form : r.form);
+  const avgTitle = overall ? 'Mean 3-dart average over every match (league and knockout) where it was recorded' : 'Mean 3-dart average over league matches where it was recorded';
   return `<table class="standings ${compact ? 'compact' : ''}">
     <thead><tr><th>#</th><th>Team</th><th class="r">P</th><th class="r">W</th><th class="r">L</th>
-      ${compact ? '' : '<th class="r">LF</th><th class="r">LA</th>'}<th class="r">LD</th>${showAvg ? '<th class="r" title="Mean 3-dart average over league matches where it was recorded">Avg</th>' : ''}<th class="r">Pts</th>${compact ? '' : '<th>Form</th>'}</tr></thead>
+      ${compact ? '' : '<th class="r">LF</th><th class="r">LA</th>'}<th class="r">LD</th>${showAvg ? `<th class="r" title="${avgTitle}">Avg</th>` : ''}<th class="r">Pts</th>${compact ? '' : '<th>Form</th>'}</tr></thead>
     <tbody>${rows.map((r, i) => `<tr class="${i < q ? 'q' : ''} ${i === q - 1 ? 'cut' : ''} ${r.live ? 'playing' : ''}">
       <td class="num">${r.position}${r.tiedWithPrev ? '<span class="tie" title="Level on every tiebreaker — separated by name only">=</span>' : ''}</td>
       <td class="team-cell">${teamBlock(s, r.teamId, { inline: compact })} ${r.live ? `<span class="live-badge ${r.liveResult === 'W' ? 'w' : r.liveResult === 'L' ? 'l' : ''}" title="Match in progress — these figures will change">LIVE${r.liveResult === 'W' ? ' · winning' : r.liveResult === 'L' ? ' · losing' : ' · level'}</span>` : ''}</td>
       <td class="r num">${r.played}</td><td class="r num">${r.won}</td><td class="r num">${r.lost}</td>
       ${compact ? '' : `<td class="r num">${r.legsFor}</td><td class="r num">${r.legsAgainst}</td>`}
-      <td class="r num" ${r.live ? `title="Includes ${r.liveLegDiff > 0 ? '+' : ''}${r.liveLegDiff} from the match being played now"` : ''}>${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="r num avg-col">${fmtAvg(r.avg) || '–'}</td>` : ''}<td class="r num strong">${r.points}</td>
-      ${compact ? '' : `<td class="form">${r.form.map((x) => `<span class="${x}">${x}</span>`).join('')}</td>`}
+      <td class="r num" ${r.live ? `title="Includes ${r.liveLegDiff > 0 ? '+' : ''}${r.liveLegDiff} from the match being played now"` : ''}>${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td>${showAvg ? `<td class="r num avg-col">${fmtAvg(avgOf(r)) || '–'}</td>` : ''}<td class="r num strong">${r.points}</td>
+      ${compact ? '' : `<td class="form" ${overall ? 'title="Last 5 matches, knockout included"' : ''}>${formOf(r).map((x) => `<span class="${x}">${x}</span>`).join('')}</td>`}
     </tr>`).join('')}</tbody></table>`;
 }
 

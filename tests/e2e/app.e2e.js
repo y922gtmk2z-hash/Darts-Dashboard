@@ -467,6 +467,19 @@ test('the final spotlight replaces the live screen while the 3rd place play-off 
   await ctx.close();
 });
 
+test('admin league table: form and average include the knockout', { skip }, async () => {
+  const s = simulateUntil(leagueState(8), (x) => x.phase === 'knockout' && !!T.fixtureById(x, 'F').awayId && !T.liveFixtures(x).length, seededRandom(5));
+  const sf1 = T.fixtureById(s, 'SF1');
+  const winner = sf1.homeLegs > sf1.awayLegs ? sf1.homeId : sf1.awayId;
+  const { ctx, admin, errors } = await openPair({ state: s });
+  await admin.click('.tabs [data-tab="table"]');
+  const row = admin.locator('table.standings tbody tr', { hasText: T.teamName(s, winner) });
+  assert.equal(await row.locator('td.form span').last().textContent(), 'W'); // the semi-final win
+  assert.match(await row.locator('td.form').getAttribute('title'), /knockout included/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('starting the knockout plays the semi-final draw on the TV', { skip }, async () => {
   const s = simulateUntil(leagueState(8), (x) => T.canStartKnockout(x), seededRandom(9));
   const { ctx, admin, tv, errors } = await openPair({ state: s });

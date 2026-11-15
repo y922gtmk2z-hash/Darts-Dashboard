@@ -377,6 +377,8 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
   const league = s.phase === 'league';
   const quals = league ? I.qualificationStatus(s) : new Map();
   const { streaks } = I.records(s);
+  // Form and average count knockout matches too; P/W/L/+/-/Pts stay league (they decide the seeding).
+  const overall = league ? null : I.overallRecords(s);
   // The race column only appears once someone is through, out, or close to sure.
   const race = full && league && [...quals.values()].some((x) => x.status !== 'alive' || (x.needs && x.needs <= 3));
   return `<table class="tv-table with-avg ${full ? 'full' : 'compact'} ${anyLive ? 'any-live' : ''}" style="--row-h:${rowH}px">
@@ -391,9 +393,9 @@ function tableHTML(s, rows, { full = false, avail: availOverride } = {}) {
         <td class="pos num">${r.position}${r.tiedWithPrev ? '<span class="tie">=</span>' : ''}</td>
         <td class="team"><span class="tcell">${teamBlock(s, r.teamId, { inline: rows.length > 10, cls: 'nm' })}${marks}${arrow}</span></td>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.lost}</td>
-        <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td><td class="num avg">${fmtAvg(r.avg) || '–'}</td>
+        <td class="num">${r.legDiff > 0 ? '+' : ''}${r.legDiff}</td><td class="num avg">${fmtAvg(overall ? overall.get(r.teamId)?.avg : r.avg) || '–'}</td>
         <td class="pts num">${r.points}</td>
-        <td class="form">${formHTML(r)}</td>
+        <td class="form">${formHTML(overall ? { ...r, form: overall.get(r.teamId)?.form ?? r.form } : r)}</td>
         ${race ? `<td class="race ${qs?.status ?? ''}">${raceText(qs)}</td>` : ''}
       </tr>`;
     }).join('')}</tbody>
@@ -625,7 +627,7 @@ function statsView(s, strip = false) {
       <li><b class="num">${r.longest.length || '–'}</b><span>Longest winning run<em>${r.longest.teamIds.map(name).join(', ') || 'No results yet'}</em></span></li>
       <li><b class="num">${r.hot[0]?.length ?? '–'}</b><span>On fire now 🔥<em>${r.hot.length ? r.hot.map((h) => `${name(h.teamId)} (${h.length})`).join(', ') : 'Nobody on 3+ wins in a row'}</em></span></li>
       <li><b class="num">${r.whitewashes[0]?.count ?? '–'}</b><span>Most whitewashes<em>${r.whitewashes.length ? r.whitewashes.filter((w) => w.count === r.whitewashes[0].count).map((w) => name(w.teamId)).join(', ') + ' · wins without dropping a leg' : 'Wins without dropping a leg'}</em></span></li>
-      <li><b class="num">${up ? `↑${up.gap}` : '–'}</b><span>Biggest upset${up ? ` · ${up.gap} place${up.gap === 1 ? '' : 's'} apart` : ''}<em>${up ? `${name(up.winnerId)} (${I.ordinal(up.winnerPos)}) beat ${name(up.loserId)} (${I.ordinal(up.loserPos)}) ${Math.max(up.fixture.homeLegs, up.fixture.awayLegs)}–${Math.min(up.fixture.homeLegs, up.fixture.awayLegs)}` : 'None yet'}</em></span></li>
+      <li><b class="num">${up ? `↑${up.gap}` : '–'}</b><span>Biggest upset${up ? ` · ${up.gap} place${up.gap === 1 ? '' : 's'} apart` : ''}<em>${up ? `${name(up.winnerId)} (${I.ordinal(up.winnerPos)}) beat ${name(up.loserId)} (${I.ordinal(up.loserPos)}) ${Math.max(up.fixture.homeLegs, up.fixture.awayLegs)}–${Math.min(up.fixture.homeLegs, up.fixture.awayLegs)}${up.fixture.stage !== 'league' ? ` · ${esc(stageName(up.fixture))}` : ''}` : 'None yet'}</em></span></li>
     </ol>`;
   return `<section class="stats-grid">
     <div class="panel">${panelTitle('3-dart averages')}${avgPanel}</div>
@@ -663,7 +665,7 @@ function sparklineHTML(values) {
     <text class="mean-lbl" x="${VW - P.r + 10}" y="${y(avg)}" dominant-baseline="central">avg ${fmtAvg(avg)}</text>
     <polyline points="${pts}"/>
     ${values.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="${i === values.length - 1 ? 9 : 6}"/>`).join('')}
-    <text class="last" x="${x(values.length - 1)}" y="${y(last) - 18}" text-anchor="middle">${fmtAvg(last)}</text>
+    <text class="last" x="${x(values.length - 1) - 14}" y="${y(last) - 16}" text-anchor="end">${fmtAvg(last)}</text>
   </svg>`;
 }
 
@@ -674,6 +676,9 @@ function spotlightHTML(s, strip) {
   const id = ids[k];
   const sp = I.teamSpotlight(s, id);
   const r = sp.row;
+  // Played, won–lost, leg diff, average and form count every stage; while a league
+  // match is on, the league row's provisional figures are used (as the table does).
+  const o = s.phase === 'league' ? (r ?? {}) : (sp.overall ?? r ?? {});
   const name = (x) => esc(T.teamName(s, x));
   const players = playersText(s, id);
   const seed = (s.seeds ?? []).indexOf(id) + 1;
@@ -698,8 +703,8 @@ function spotlightHTML(s, strip) {
         <div class="spot-pos"><b>${r ? I.ordinal(r.position) : '–'}</b><span>${s.phase === 'league' ? 'in the table' : seed ? `seed ${seed}` : 'in the league'}</span></div>
         <div class="spot-who"><h2>${name(id)}</h2>${players ? `<p>${esc(players)}</p>` : ''}</div>
       </div>
-      ${r ? `<div class="spot-tiles">${tile('Played', r.played)}${tile('Won – lost', `${r.won}–${r.lost}`)}${tile('Points', r.points)}${tile('Leg diff', r.legDiff > 0 ? `+${r.legDiff}` : r.legDiff)}${tile('Average', fmtAvg(r.avg) || '–')}</div>` : ''}
-      <div class="spot-form"><span>Form</span>${(r?.form ?? []).map((x) => `<i class="${x}">${x}</i>`).join('') || '<em>No results yet</em>'}</div>
+      ${r ? `<div class="spot-tiles">${tile('Played', o.played)}${tile('Won – lost', `${o.won}–${o.lost}`)}${tile(s.phase === 'league' ? 'Points' : 'League pts', r.points)}${tile('Leg diff', o.legDiff > 0 ? `+${o.legDiff}` : o.legDiff)}${tile('Average', fmtAvg(o.avg) || '–')}</div>` : ''}
+      <div class="spot-form"><span>Form</span>${(o.form ?? []).map((x) => `<i class="${x}">${x}</i>`).join('') || '<em>No results yet</em>'}</div>
       ${now}
     </div>
     <div class="panel spot-side">
